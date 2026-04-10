@@ -41,14 +41,14 @@ PROVIDER_CONFIG = {
     "gemini": {
         "env_key": "GEMINI_API_KEY",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "default_model": "gemini-2.0-flash",
+        "default_model": "gemini-2.5-flash",
         "label": "Google Gemini",
         "icon": "💎",
     },
     "groq": {
         "env_key": "GROQ_API_KEY",
         "base_url": "https://api.groq.com/openai/v1",
-        "default_model": "groq/compound",
+        "default_model": "llama-3.3-70b-versatile",
         "label": "Groq",
         "icon": "🧠",
     },
