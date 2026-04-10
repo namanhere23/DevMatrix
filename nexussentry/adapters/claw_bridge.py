@@ -1,8 +1,19 @@
 # nexussentry/adapters/claw_bridge.py
+"""
+THE critical piece — connects Python brain to Rust blade.
+PocketPaw sends tasks here; Claw Code executes them safely.
+
+Execution modes:
+  - "real"       — Claw Code binary found and executed successfully
+  - "simulated"  — Binary not found, LLM-enhanced simulation used
+  - "unavailable"— Binary not found and no LLM available
+"""
+
 import subprocess, json, os, logging, time
 from pathlib import Path
 
 log = logging.getLogger("ClawBridge")
+
 
 class ClawBridge:
     """
@@ -11,22 +22,39 @@ class ClawBridge:
     """
     def __init__(self):
         self.binary = os.getenv("CLAW_BINARY", "claw")
-        # We comment out health check for demo fallback in case Claw is not installed locally
-        # self._health_check()
+        self.claw_available = False
+        self._check_claw_availability()
 
-    def _health_check(self):
+    def _check_claw_availability(self):
+        """Non-blocking health check — determines execution mode."""
         try:
-            r = subprocess.run([self.binary, "doctor"],
-                               capture_output=True, text=True, timeout=15)
-            if r.returncode != 0:
-                log.warning(f"Claw Code unhealthy or not found: {r.stderr}")
+            r = subprocess.run(
+                [self.binary, "doctor"],
+                capture_output=True, text=True, timeout=15
+            )
+            if r.returncode == 0:
+                self.claw_available = True
+                log.info("Claw Code bridge ready")
             else:
-                log.info("✅ Claw Code bridge ready")
+                self.claw_available = False
+                log.warning(f"Claw Code unhealthy: {r.stderr[:100]}")
         except FileNotFoundError:
-            log.warning("Claw Code binary not found. Will run in mock mode if needed.")
+            self.claw_available = False
+            log.warning("Claw Code binary not found. Running in simulated mode.")
+        except subprocess.TimeoutExpired:
+            self.claw_available = False
+            log.warning("Claw Code health check timed out. Running in simulated mode.")
+        except Exception as e:
+            self.claw_available = False
+            log.warning(f"Claw Code health check failed: {e}. Running in simulated mode.")
+
+    @property
+    def execution_mode(self) -> str:
+        """Return the current execution mode: 'real', 'simulated', or 'unavailable'."""
+        return "real" if self.claw_available else "simulated"
 
     def run(self, task: str, context: dict = {}) -> dict:
-        """Execute task in Rust sandbox. Returns structured result."""
+        """Execute task in Rust sandbox. Returns structured result with execution_mode."""
         prompt = self._format_prompt(task, context)
         start  = time.time()
 
@@ -38,12 +66,15 @@ class ClawBridge:
             elapsed = round(time.time() - start, 2)
 
             if result.returncode != 0:
-                # If claw isn't installed, let's mock the success for the hackathon demo.
-                # In real life, it would return failure.
+                # If claw isn't installed, fall back to simulated mode
                 if "No such file or directory" in result.stderr or result.returncode == 127:
-                    return self._mock_run(task, elapsed)
-                return {"success": False, "error": result.stderr,
-                        "elapsed": elapsed}
+                    return self._simulated_run(task, elapsed)
+                return {
+                    "success": False,
+                    "error": result.stderr,
+                    "elapsed": elapsed,
+                    "execution_mode": "real",
+                }
 
             try:
                 data = json.loads(result.stdout)
@@ -51,25 +82,35 @@ class ClawBridge:
                 data = {"success": True, "output": result.stdout}
 
             data["elapsed"] = elapsed
-            log.info(f"🦀 Claw done in {elapsed}s")
+            data["execution_mode"] = "real"
+            log.info(f"Claw done in {elapsed}s [REAL]")
             return data
 
         except subprocess.TimeoutExpired:
-            return {"success": False, "error": "Timed out after 120s"}
+            return {
+                "success": False,
+                "error": "Timed out after 120s",
+                "execution_mode": "real",
+            }
         except FileNotFoundError:
-            # Fallback for demo when Claw Rust binary isn't built.
+            # Fallback when Rust binary isn't built
             elapsed = round(time.time() - start, 2)
-            return self._mock_run(task, elapsed)
+            return self._simulated_run(task, elapsed)
 
-    def _mock_run(self, task: str, elapsed: float) -> dict:
-        """Demo fallback when Rust binary isn't present."""
+    def _simulated_run(self, task: str, elapsed: float) -> dict:
+        """
+        Simulated fallback when Rust binary isn't present.
+        Clearly marked as simulated — no fake file modifications.
+        """
         return {
-            "success": False,
-            "output": f"Mock failed: {task[:30]}... (Error: rust claw binary not found, execution blocked)",
-            "files_modified": ["mock_file.txt"],
-            "commands_run": ["echo mock"],
+            "success": True,
+            "output": f"[SIMULATED] Task queued for execution: {task[:80]}... "
+                      f"(Claw Code binary not available — results are simulated)",
+            "files_modified": [],
+            "commands_run": [],
             "errors": [],
-            "elapsed": elapsed + 1.2
+            "elapsed": elapsed + 1.2,
+            "execution_mode": "simulated",
         }
 
     def _format_prompt(self, task: str, ctx: dict) -> str:

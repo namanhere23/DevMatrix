@@ -6,6 +6,11 @@ Caches every LLM API response to disk using MD5 hashing.
 If the API is down during a live demo, cached responses are
 served transparently. This is your safety net.
 
+Features:
+  - Cache versioning: bump CACHE_VERSION to invalidate stale entries
+  - Session scoping: optional session_id to isolate cache per run
+  - Agent exclusion: disable caching for specific agents (e.g. critic)
+
 Usage:
     from nexussentry.utils.response_cache import ResponseCache
     cache = ResponseCache()
@@ -17,9 +22,12 @@ import hashlib
 import os
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Set
 
 logger = logging.getLogger("ResponseCache")
+
+# Bump this version to invalidate all existing cache entries
+CACHE_VERSION = "v2"
 
 CACHE_DIR = Path(".demo_cache")
 
@@ -30,19 +38,27 @@ class ResponseCache:
     Survives process restarts — perfect for demo reliability.
     """
 
-    def __init__(self, cache_dir: str = ".demo_cache", enabled: bool = True):
+    def __init__(self, cache_dir: str = ".demo_cache", enabled: bool = True,
+                 session_id: Optional[str] = None,
+                 excluded_agents: Optional[Set[str]] = None):
         self.cache_dir = Path(cache_dir)
         self.enabled = enabled
         self.hits = 0
         self.misses = 0
+        self.session_id = session_id or ""
+        self.excluded_agents = excluded_agents or set()
 
         if self.enabled:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _make_key(self, prompt: str, model: str = "") -> str:
-        """Generate a deterministic cache key from prompt + model."""
-        raw = f"{model}::{prompt}"
+        """Generate a deterministic, versioned cache key from prompt + model."""
+        raw = f"{CACHE_VERSION}::{self.session_id}::{model}::{prompt}"
         return hashlib.md5(raw.encode()).hexdigest()
+
+    def is_agent_excluded(self, agent_name: str) -> bool:
+        """Check if an agent is excluded from caching."""
+        return agent_name.lower() in {a.lower() for a in self.excluded_agents}
 
     def get(self, prompt: str, model: str = "") -> dict | None:
         """Try to get a cached response. Returns None on miss."""
@@ -117,6 +133,7 @@ class ResponseCache:
             "total": total,
             "hit_rate": f"{rate:.1f}%",
             "cache_dir": str(self.cache_dir),
+            "cache_version": CACHE_VERSION,
         }
 
 

@@ -74,7 +74,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
 
     Flow:
         User Goal → Guardian (security) → Scout (decompose) →
-        for each sub-task:
+        for each sub-task (SEQUENTIAL — conflict-aware):
             Architect (plan) → Fixer (execute) → Critic (review)
             if rejected: loop back to Architect with feedback
             if max rejections: escalate to Human (HITL)
@@ -89,11 +89,15 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     scout = ScoutAgent()
     architect = ArchitectAgent()
     fixer = FixerAgent()
-    critic = CriticAgent(max_rejections=2)
     hitl = TelegramHITL()
     cache = get_cache()
     provider = get_provider()
     memory = SwarmMemory()
+
+    # ── Determine execution mode from Claw bridge ──
+    exec_mode = fixer.claw.execution_mode
+    exec_badge = f"[{exec_mode.upper()}]"
+    print(f"  ⚡ Execution Mode: {exec_badge}")
 
     # ── Show provider info ──
     print(f"  🤖 AI Providers: {provider.provider_summary_str()}")
@@ -116,6 +120,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         "goal": user_goal,
         "providers": provider.available_providers,
         "mock_mode": provider.mock_mode,
+        "execution_mode": exec_mode,
     })
 
     # ══════════════════════════════════════════════
@@ -147,12 +152,18 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         tracer.mark_complete()
         return []
 
+    # Record Scout discoveries as facts
+    memory.record_fact("goal_summary", decomposition.get("goal_summary", user_goal))
+    memory.record_fact("complexity", decomposition.get("estimated_complexity", "unknown"))
+
     results = []
 
     # ══════════════════════════════════════════════
-    # STEPS 2-4: Architect → Fixer → Critic loop (PARALLEL)
+    # STEPS 2-4: Architect → Fixer → Critic loop
+    # SEQUENTIAL execution — each task feeds context
+    # to the next via SwarmMemory
     # ══════════════════════════════════════════════
-    async def process_sub_task(task_obj):
+    for task_obj in sub_tasks:
         task_id = task_obj.get("id", "?")
         task_desc = task_obj.get("task", "Unknown task")
         priority = task_obj.get("priority", "medium").upper()
@@ -163,12 +174,23 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         tracer.set_current_task(task_desc)
         feedback = ""
 
+        # Single CriticAgent per sub-task — tracks rejection_count across retry attempts
+        critic = CriticAgent(max_rejections=2)
+
         for attempt in range(3):
             print(f"\n    ▸ Attempt {attempt + 1}/3 for Sub-task {task_id}")
 
             # ── Step 2: Architect plans ──
             if slow: await asyncio.sleep(1.5)
+
+            # Feed memory constraints into the Architect
             plan_context = memory.summarize_context()
+            constraints = memory.get_actionable_constraints(
+                proposed_files=task_obj.get("files_to_modify", [])
+            )
+            if constraints:
+                plan_context += f"\n\n{constraints}"
+
             plan = await asyncio.to_thread(
                 architect.plan,
                 sub_task=task_desc,
@@ -176,6 +198,13 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 context=plan_context,
                 tracer=tracer
             )
+
+            # ── Check for file conflicts before execution ──
+            proposed_files = plan.get("files_to_modify", [])
+            conflicts = memory.has_file_conflict(proposed_files)
+            if conflicts:
+                print(f"    ⚠️  File conflict detected: {', '.join(conflicts)}")
+                print(f"    ⚠️  These files were modified by a previous task. Proceeding with caution.")
 
             # ── Step 3: Fixer executes ──
             if slow: await asyncio.sleep(2)
@@ -187,9 +216,8 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
 
             # ── Step 4: Critic reviews ──
             if slow: await asyncio.sleep(1.5)
-            critic_agent = CriticAgent(max_rejections=2)  # Fresh per sub-task
             verdict = await asyncio.to_thread(
-                critic_agent.review,
+                critic.review,
                 original_task=task_desc,
                 plan=plan,
                 fixer_result=result,
@@ -198,19 +226,22 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
 
             if verdict["decision"] == "approve":
                 score = verdict.get("score", "?")
-                print(f"\n    ✅ Sub-task {task_id} complete! (score: {score}/100)")
+                exec_mode_tag = result.get("execution_mode", "unknown").upper()
+                print(f"\n    ✅ Sub-task {task_id} complete! (score: {score}/100) [{exec_mode_tag}]")
                 
                 # Record to SwarmMemory
                 memory.record_task_result(task_id, task_desc, f"Completed with score {score}")
                 for f in plan.get("files_to_modify", []):
                     memory.mark_file_modified(f)
                     
-                return {
+                results.append({
                     "task": task_desc,
                     "status": "done",
                     "score": score,
-                    "attempts": attempt + 1
-                }
+                    "attempts": attempt + 1,
+                    "execution_mode": result.get("execution_mode", "unknown"),
+                })
+                break
 
             elif verdict["decision"] == "escalate_to_human":
                 tracer.log("HITL", "approval_requested", {"task": task_desc})
@@ -226,19 +257,22 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 if approved:
                     tracer.log("HITL", "human_approved", {})
                     print(f"    ✅ Human approved sub-task {task_id}. Moving on.")
-                    return {
+                    results.append({
                         "task": task_desc,
                         "status": "human_approved",
-                        "attempts": attempt + 1
-                    }
+                        "attempts": attempt + 1,
+                        "execution_mode": result.get("execution_mode", "unknown"),
+                    })
                 else:
                     tracer.log("HITL", "human_rejected", {})
                     print(f"    ❌ Human rejected sub-task {task_id}. Skipping.")
-                    return {
+                    results.append({
                         "task": task_desc,
                         "status": "skipped",
-                        "attempts": attempt + 1
-                    }
+                        "attempts": attempt + 1,
+                        "execution_mode": result.get("execution_mode", "unknown"),
+                    })
+                break
 
             else:
                 # Critic rejected → loop back with feedback
@@ -251,19 +285,15 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 )
                 memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
                 print(f"    🔄 Retrying sub-task {task_id} with Critic feedback...")
-        
-        # Max attempts reached
-        return {
-            "task": task_desc,
-            "status": "failed",
-            "score": 0,
-            "attempts": 3
-        }
-
-    # Execute all sub-tasks concurrently
-    parallel_tasks = [process_sub_task(task) for task in sub_tasks]
-    results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
-
+        else:
+            # Max attempts reached (for-else: only when loop completes without break)
+            results.append({
+                "task": task_desc,
+                "status": "failed",
+                "score": 0,
+                "attempts": 3,
+                "execution_mode": result.get("execution_mode", "unknown"),
+            })
 
     # ══════════════════════════════════════════════
     # FINAL SUMMARY
@@ -274,8 +304,12 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     security_stats = guardian.stats()
     provider_stats = provider.stats()
 
+    # Determine overall execution mode badge
+    exec_modes_used = list({r.get("execution_mode", "unknown") for r in results if isinstance(r, dict)})
+    overall_mode = exec_modes_used[0].upper() if len(exec_modes_used) == 1 else "MIXED"
+
     print(f"\n  {'═' * 56}")
-    print(f"  🏁 NexusSentry Swarm Complete!")
+    print(f"  🏁 NexusSentry Swarm Complete! [{overall_mode}]")
     print(f"  {'─' * 56}")
     print(f"   ⏱️  Total time:     {summary['total_time_s']}s")
     print(f"   📊 Total events:   {summary['total_events']}")
@@ -286,7 +320,19 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     print(f"   💾 Cache hit rate: {cache_stats['hit_rate']}")
     print(f"   🤖 LLM calls:     {provider_stats['total_calls']}")
     print(f"   🔀 Providers used: {provider_stats['provider_usage']}")
+    print(f"   ⚡ Execution mode: {overall_mode}")
     print(f"   📁 Trace log:      {summary['log_file']}")
+
+    # Per-task status breakdown
+    print(f"  {'─' * 56}")
+    print(f"  📋 Per-Task Results:")
+    for r in results:
+        if isinstance(r, dict):
+            status_icon = {"done": "✅", "human_approved": "👤", "skipped": "⏭️", "failed": "❌"}.get(r.get("status"), "❓")
+            mode_tag = f"[{r.get('execution_mode', '?').upper()}]"
+            score_tag = f" (score: {r['score']}/100)" if "score" in r else ""
+            print(f"    {status_icon} {r['task'][:50]}... {mode_tag}{score_tag} ({r.get('attempts', '?')} attempts)")
+
     print(f"  {'═' * 56}")
     print(f"\n  \033[95m✨ Python for the Brain. Rust for the Blade. ✨\033[0m\n")
 

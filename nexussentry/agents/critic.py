@@ -11,6 +11,7 @@ Provider preference: Grok (fast reasoning for quick reviews)
 
 import json
 import re
+import hashlib
 import logging
 
 from nexussentry.providers.llm_provider import get_provider
@@ -71,7 +72,9 @@ WHAT FIXER DID:
         cache = get_cache()
         provider = get_provider()
         provider_name = provider.get_provider_for_agent("critic")
-        cache_key = f"review::{original_task[:80]}::attempt={self.rejection_count}"
+        # Cache key hashes the FULL review input so each unique plan+result gets its own entry
+        review_hash = hashlib.md5(review_input.encode()).hexdigest()[:12]
+        cache_key = f"review::{original_task[:50]}::hash={review_hash}"
 
         # Check cache
         cached = cache.get(cache_key, model=provider_name)
