@@ -331,7 +331,7 @@ DevMatrix/
 │   │   └── llm_provider.py      # Gemini/Grok/OpenRouter/Anthropic router
 │   ├── adapters/
 │   │   ├── claw_bridge.py       # 🦀 Python ↔ Rust bridge
-│   │   └── pocketpaw_backend.py # PocketPaw integration
+│   │   └── nexus_backend.py     # NexusSentry backend integration
 │   ├── agents/
 │   │   ├── scout.py             # 🔍 Task decomposition (→ Gemini)
 │   │   ├── architect.py         # 🏗️ Technical planning (→ OpenRouter)

@@ -1,11 +1,11 @@
-# nexussentry/adapters/pocketpaw_backend.py
+# nexussentry/adapters/nexus_backend.py
 """
-PocketPaw Agent Backend — Claw Code Integration
+NexusSentry Agent Backend — Claw Code Integration
 
-Implements PocketPaw's AgentBackend protocol for routing
+Implements NexusSentry's AgentBackend protocol for routing
 code execution tasks to the Claw Code Rust sandbox.
 
-Installation: pip install nexussentry[pocketpaw]  (when available)
+Installation: pip install nexussentry[all]
 Or use directly by importing this class.
 """
 
@@ -13,10 +13,10 @@ import json
 from nexussentry.adapters.claw_bridge import ClawBridge
 
 
-class PocketPawClawBackend:
+class NexusClawBackend:
     """
-    Implements PocketPaw's AgentBackend protocol.
-    This is what PocketPaw calls when it needs code executed by Claw Code.
+    Implements NexusSentry's AgentBackend protocol.
+    This is what NexusSentry calls when it needs code executed by Claw Code.
     """
     name = "claw_code"
     description = "Rust-sandboxed code execution via Claw Code"

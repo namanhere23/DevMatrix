@@ -1,7 +1,7 @@
 # nexussentry/adapters/claw_bridge.py
 """
 THE critical piece — connects Python brain to Rust blade.
-PocketPaw sends tasks here; Claw Code executes them safely.
+NexusSentry sends tasks here; Claw Code executes them safely.
 
 Execution modes:
   - "real"       — Claw Code binary found and executed successfully
@@ -18,7 +18,7 @@ log = logging.getLogger("ClawBridge")
 class ClawBridge:
     """
     THE critical piece — connects Python brain to Rust blade.
-    PocketPaw sends tasks here; Claw Code executes them safely.
+    NexusSentry sends tasks here; Claw Code executes them safely.
     """
     def __init__(self):
         self.binary = os.getenv("CLAW_BINARY", "claw")
