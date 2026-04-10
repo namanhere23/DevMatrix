@@ -1,8 +1,6 @@
 # Core dependencies
-python-dotenv>=1.0.1
-requests>=2.31.0
-
-# Optional — install individually as needed
-anthropic>=0.30.0
-python-telegram-bot>=21.0
+python-dotenv
+requests
+anthropic
+python-telegram-bot
 # pocketpaw>=0.1.0  # Optional: pip install nexussentry[pocketpaw]
