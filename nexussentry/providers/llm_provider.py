@@ -5,13 +5,13 @@
 ║                                                           ║
 ║  Routes AI calls to the BEST available provider:          ║
 ║    • Gemini   (Google)    — fast, cheap                   ║
-║    • Grok     (xAI)       — fast reasoning                ║
+║    • Groq     (Groq)      — fast reasoning                ║
 ║    • OpenRouter (multi)   — diverse model access           ║
 ║    • Anthropic (Claude)   — premium fallback              ║
 ║    • Mock                 — demo mode, no keys needed     ║
 ║                                                           ║
 ║  Auto-detects available API keys from .env                ║
-║  Zero extra SDKs — uses raw HTTP for Grok/OpenRouter/Gemini║
+║  Zero extra SDKs — uses raw HTTP for Groq/OpenRouter/Gemini║
 ╚═══════════════════════════════════════════════════════════╝
 """
 
@@ -45,11 +45,11 @@ PROVIDER_CONFIG = {
         "label": "Google Gemini",
         "icon": "💎",
     },
-    "grok": {
-        "env_key": "GROK_API_KEY",
-        "base_url": "https://api.x.ai/v1",
-        "default_model": "grok-3-mini-fast",
-        "label": "xAI Grok",
+    "groq": {
+        "env_key": "GROQ_API_KEY",
+        "base_url": "https://api.groq.com/openai/v1",
+        "default_model": "llama-3.3-70b-versatile",
+        "label": "Groq",
         "icon": "🧠",
     },
     "openrouter": {
@@ -69,13 +69,13 @@ PROVIDER_CONFIG = {
 }
 
 # Priority order for auto-selection (cheapest/fastest first)
-AUTO_PRIORITY = ["gemini", "grok", "openrouter", "anthropic"]
+AUTO_PRIORITY = ["gemini", "groq", "openrouter", "anthropic"]
 
 # Agent → preferred provider mapping
 AGENT_PREFERENCES = {
     "scout": "gemini",       # Fast decomposition
     "architect": "openrouter",  # Diverse model access
-    "critic": "grok",        # Fast reasoning
+    "critic": "groq",        # Fast reasoning
     "fixer": "auto",         # Whatever's available
     "guardian": "gemini",    # Speed for security scanning
 }
@@ -99,6 +99,9 @@ class LLMProvider:
         """Scan .env for available API keys."""
         for name, config in PROVIDER_CONFIG.items():
             key = os.getenv(config["env_key"], "").strip()
+            # Backward compatibility for existing setups.
+            if name == "groq" and not key:
+                key = os.getenv("GROK_API_KEY", "").strip()
             # Filter out placeholder/dummy values
             is_placeholder = (
                 not key
@@ -157,7 +160,7 @@ class LLMProvider:
             system: System prompt
             user_msg: User message
             max_tokens: Maximum tokens in response
-            prefer: Preferred provider ("gemini", "grok", "openrouter", "anthropic", "auto")
+            prefer: Preferred provider ("gemini", "groq", "openrouter", "anthropic", "auto")
             agent_name: Name of the calling agent (for smart routing)
 
         Returns:
@@ -181,8 +184,8 @@ class LLMProvider:
         try:
             if provider == "gemini":
                 return self._call_gemini(system, user_msg, max_tokens)
-            elif provider == "grok":
-                return self._call_grok(system, user_msg, max_tokens)
+            elif provider == "groq":
+                return self._call_groq(system, user_msg, max_tokens)
             elif provider == "openrouter":
                 return self._call_openrouter(system, user_msg, max_tokens)
             elif provider == "anthropic":
@@ -202,8 +205,8 @@ class LLMProvider:
                     logger.info(f"  🔄 Fallback → {PROVIDER_CONFIG[p]['label']}")
                     if p == "gemini":
                         return self._call_gemini(system, user_msg, max_tokens)
-                    elif p == "grok":
-                        return self._call_grok(system, user_msg, max_tokens)
+                    elif p == "groq":
+                        return self._call_groq(system, user_msg, max_tokens)
                     elif p == "openrouter":
                         return self._call_openrouter(system, user_msg, max_tokens)
                     elif p == "anthropic":
@@ -255,13 +258,13 @@ class LLMProvider:
         except (KeyError, IndexError):
             raise ValueError(f"Unexpected Gemini response: {json.dumps(data)[:200]}")
 
-    def _call_grok(self, system: str, user_msg: str, max_tokens: int) -> str:
-        """Call xAI Grok API (OpenAI-compatible)."""
+    def _call_groq(self, system: str, user_msg: str, max_tokens: int) -> str:
+        """Call Groq API (OpenAI-compatible)."""
         import requests
 
-        api_key = self._available["grok"]
-        url = f"{PROVIDER_CONFIG['grok']['base_url']}/chat/completions"
-        model = PROVIDER_CONFIG["grok"]["default_model"]
+        api_key = self._available["groq"]
+        url = f"{PROVIDER_CONFIG['groq']['base_url']}/chat/completions"
+        model = PROVIDER_CONFIG["groq"]["default_model"]
 
         payload = {
             "model": model,

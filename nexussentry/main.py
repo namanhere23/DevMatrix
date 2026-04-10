@@ -8,7 +8,7 @@
 ║  Coordinates 4 specialized AI agents + security layer     ║
 ║  + human-in-the-loop approval + real-time dashboard.      ║
 ║                                                           ║
-║  Multi-Provider AI: Gemini │ Grok │ OpenRouter │ Anthropic║
+║  Multi-Provider AI: Gemini │ Groq │ OpenRouter │ Anthropic║
 ╚═══════════════════════════════════════════════════════════╝
 """
 

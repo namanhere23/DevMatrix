@@ -13,10 +13,10 @@ def test_mock_mode():
 
 def test_resolve_provider():
     provider = LLMProvider()
-    provider._available = {"gemini": "fake", "grok": "fake"}
+    provider._available = {"gemini": "fake", "groq": "fake"}
     
     # Should respect preference if available
-    assert provider._resolve_provider("grok") == "grok"
+    assert provider._resolve_provider("groq") == "groq"
     
     # Auto should pick gemini as it's priority 1
     assert provider._resolve_provider("auto") == "gemini"
