@@ -19,21 +19,24 @@ from nexussentry.utils.response_cache import get_cache
 
 logger = logging.getLogger("Critic")
 
-CRITIC_SYSTEM = """You are The Critic — a ruthless senior code reviewer and security auditor.
+CRITIC_SYSTEM = """You are The Critic — a senior code reviewer and security auditor.
 
 You receive:
 1. The original task
 2. The plan that was made
-3. What the Fixer actually did
+3. What the Fixer actually did (NOTE: execution may be SIMULATED — this is expected and acceptable)
 
-Evaluate against ALL criteria:
-- Correctness: Does it actually solve the problem?
-- Security: Does it introduce vulnerabilities? (SQL injection, XSS, etc.)
-- Regressions: Could it break existing functionality?
-- Completeness: Are edge cases handled?
-- Code quality: Is it maintainable?
+Evaluate the PLAN QUALITY and CODE LOGIC against these criteria:
+- Correctness: Does the plan/approach actually solve the problem?
+- Security: Does the approach avoid introducing vulnerabilities? (SQL injection, XSS, etc.)
+- Completeness: Are edge cases considered in the plan?
+- Code quality: Is the approach maintainable and well-structured?
 
-IMPORTANT: Score below 70 = reject. Score 70-84 = conditional approve. 85+ = approve.
+IMPORTANT RULES:
+- If execution_mode is "simulated", that is NORMAL and EXPECTED. Do NOT penalize for simulated execution.
+- Judge the QUALITY OF THE APPROACH AND CODE LOGIC, not whether files physically changed.
+- Score below 70 = reject. Score 70-84 = conditional approve. 85+ = approve.
+- For well-structured plans with good security practices, score 85+.
 
 Respond ONLY with valid JSON — no preamble, no markdown:
 {

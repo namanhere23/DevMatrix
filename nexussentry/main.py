@@ -240,6 +240,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     "score": score,
                     "attempts": attempt + 1,
                     "execution_mode": result.get("execution_mode", "unknown"),
+                    "saved_to": result.get("saved_to", ""),
                 })
                 break
 
@@ -323,6 +324,18 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     print(f"   ⚡ Execution mode: {overall_mode}")
     print(f"   📁 Trace log:      {summary['log_file']}")
 
+    # Show output directory if files were saved
+    output_dirs = set()
+    for r in results:
+        if isinstance(r, dict) and r.get("saved_to"):
+            output_dirs.add(r["saved_to"])
+    if output_dirs:
+        print(f"   📂 Output saved:   {', '.join(output_dirs)}")
+    else:
+        output_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+        if os.path.exists(output_path):
+            print(f"   📂 Output dir:     {output_path}")
+
     # Per-task status breakdown
     print(f"  {'─' * 56}")
     print(f"  📋 Per-Task Results:")
@@ -332,6 +345,8 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
             mode_tag = f"[{r.get('execution_mode', '?').upper()}]"
             score_tag = f" (score: {r['score']}/100)" if "score" in r else ""
             print(f"    {status_icon} {r['task'][:50]}... {mode_tag}{score_tag} ({r.get('attempts', '?')} attempts)")
+            if r.get("saved_to"):
+                print(f"       💾 Files → {r['saved_to']}")
 
     print(f"  {'═' * 56}")
     print(f"\n  \033[95m✨ Python for the Brain. Rust for the Blade. ✨\033[0m\n")
