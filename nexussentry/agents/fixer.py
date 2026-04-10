@@ -12,6 +12,7 @@ Provider preference: auto (uses whatever's available)
 """
 
 import json
+import re
 import logging
 
 from nexussentry.adapters.claw_bridge import ClawBridge
@@ -45,9 +46,14 @@ class FixerAgent:
         provider_name = provider.get_provider_for_agent("fixer")
 
         if tracer:
-            tracer.log("Fixer", "execute_start", {"plan": plan_summary, "provider": provider_name})
+            tracer.log("Fixer", "execute_start", {
+                "plan": plan_summary,
+                "provider": provider_name,
+                "execution_mode": self.claw.execution_mode,
+            })
 
-        print(f"\n🔧 Fixer executing in Rust sandbox...")
+        mode_badge = f" [{self.claw.execution_mode.upper()}]"
+        print(f"\n🔧 Fixer executing{mode_badge}...")
 
         try:
             # Build a detailed prompt from the Architect's plan
@@ -69,17 +75,22 @@ Be careful. Report every change. If something fails, report it honestly.
                 context={"safety_mode": "sandboxed", "dry_run": "false"}
             )
 
-            # If Claw returned a mock result, enhance it with LLM reasoning
-            if result.get("output", "").startswith("Mock executed:"):
+            # If Claw returned a simulated result, enhance it with LLM reasoning
+            if result.get("execution_mode") == "simulated":
                 result = self._llm_enhanced_execution(plan, result, provider)
 
             self.tasks_executed += 1
             status = "✅ Success" if result.get("success") else "❌ Failed"
             elapsed = result.get("elapsed", "?")
-            print(f"🔧 Fixer result: {status} ({elapsed}s) via {provider_name}")
+            exec_mode = result.get("execution_mode", "unknown").upper()
+            print(f"🔧 Fixer result: {status} [{exec_mode}] ({elapsed}s) via {provider_name}")
 
             if tracer:
-                tracer.log("Fixer", "execute_done", {**result, "provider": provider_name})
+                tracer.log("Fixer", "execute_done", {
+                    **result,
+                    "provider": provider_name,
+                    "execution_mode": result.get("execution_mode", "unknown"),
+                })
 
             return result
 
@@ -91,16 +102,17 @@ Be careful. Report every change. If something fails, report it honestly.
                 "output": "Fixer execution encountered an error",
                 "files_modified": [],
                 "commands_run": [],
-                "elapsed": 0
+                "elapsed": 0,
+                "execution_mode": "unavailable",
             }
-            print(f"🔧 Fixer result: ❌ Error — {e}")
+            print(f"🔧 Fixer result: ❌ Error [UNAVAILABLE] — {e}")
             if tracer:
-                tracer.log("Fixer", "execute_error", {"error": str(e)})
+                tracer.log("Fixer", "execute_error", {"error": str(e), "execution_mode": "unavailable"})
             return error_result
 
     def _llm_enhanced_execution(self, plan: dict, mock_result: dict,
                                  provider) -> dict:
-        """When Claw Code is in mock mode, use LLM to generate realistic execution output."""
+        """When Claw Code is in simulated mode, use LLM to generate realistic execution output."""
         try:
             raw = provider.chat(
                 system=FIXER_SYSTEM,
@@ -113,7 +125,6 @@ Commands: {'; '.join(plan.get('commands_to_run', []))}""",
                 agent_name="fixer"
             )
 
-            import re
             # Try to parse JSON from response
             try:
                 result = json.loads(raw)
@@ -125,6 +136,7 @@ Commands: {'; '.join(plan.get('commands_to_run', []))}""",
                     result = mock_result
 
             result["elapsed"] = mock_result.get("elapsed", 1.5)
+            result["execution_mode"] = "simulated"
             result.setdefault("success", True)
             result.setdefault("files_modified", [])
             result.setdefault("commands_run", [])

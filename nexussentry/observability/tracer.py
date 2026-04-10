@@ -4,7 +4,7 @@ AgentTracer — Real-Time Event Logging & Dashboard Data Provider
 Logs every agent action to a JSONL file and provides a thread-safe
 in-memory event store that the dashboard can poll via HTTP.
 
-Now tracks which LLM provider is used for each call.
+Now tracks execution mode and per-task status.
 """
 
 import json
@@ -53,8 +53,14 @@ class AgentTracer:
         self.tasks_total = 0
         self.tasks_done = 0
 
+        # Execution mode tracking
+        self.execution_mode = "unknown"
+
         # Provider tracking
         self.provider_calls: dict[str, int] = {}
+
+        # Per-task status tracking
+        self.task_statuses: list[dict] = []
 
     def log(self, agent: str, action: str, data: dict = {}):
         """Log an agent event — thread-safe."""
@@ -71,6 +77,11 @@ class AgentTracer:
         if provider and provider != "cache":
             self.provider_calls[provider] = self.provider_calls.get(provider, 0) + 1
 
+        # Track execution mode
+        exec_mode = data.get("execution_mode", "")
+        if exec_mode:
+            self.execution_mode = exec_mode
+
         with self._lock:
             self.events.append(event)
             self.current_agent = agent
@@ -79,6 +90,7 @@ class AgentTracer:
             if action == "swarm_start":
                 self.status = "running"
                 self.goal = data.get("goal", "")
+                self.execution_mode = data.get("execution_mode", "unknown")
             elif action == "decompose_done":
                 tasks = data.get("sub_tasks", [])
                 self.tasks_total = len(tasks)
@@ -99,12 +111,26 @@ class AgentTracer:
         # Console output
         icon = self.AGENT_ICONS.get(agent, "🤖")
         provider_tag = f" [{provider}]" if provider and provider != "cache" else ""
-        _safe_print(f"  [+{event['t']:>6.1f}s] {icon} {agent:12} → {action}{provider_tag}")
+        exec_tag = f" [{exec_mode.upper()}]" if exec_mode and exec_mode != "unknown" else ""
+        _safe_print(f"  [+{event['t']:>6.1f}s] {icon} {agent:12} → {action}{provider_tag}{exec_tag}")
 
     def set_current_task(self, task_desc: str):
         """Update what task is currently being worked on."""
         with self._lock:
             self.current_task = task_desc
+
+    def record_task_status(self, task_desc: str, status: str,
+                           execution_mode: str = "unknown",
+                           score: int = 0, attempts: int = 0):
+        """Record the final status of a completed sub-task."""
+        with self._lock:
+            self.task_statuses.append({
+                "task": task_desc,
+                "status": status,
+                "execution_mode": execution_mode,
+                "score": score,
+                "attempts": attempts,
+            })
 
     def mark_complete(self):
         """Mark the swarm session as complete."""
@@ -132,6 +158,8 @@ class AgentTracer:
                 "events": self.events[-50:],  # Last 50 events
                 "agents_used": list({e["agent"] for e in self.events}),
                 "provider_calls": self.provider_calls.copy(),
+                "execution_mode": self.execution_mode,
+                "task_statuses": list(self.task_statuses),
             }
 
     def summary(self) -> dict:
@@ -157,4 +185,6 @@ class AgentTracer:
                 "rejections": rejections,
                 "log_file": str(self.log_file),
                 "provider_calls": self.provider_calls.copy(),
+                "execution_mode": self.execution_mode,
+                "task_statuses": list(self.task_statuses),
             }
