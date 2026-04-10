@@ -64,8 +64,8 @@ class ClawBridge:
     def _mock_run(self, task: str, elapsed: float) -> dict:
         """Demo fallback when Rust binary isn't present."""
         return {
-            "success": True,
-            "output": f"Mock executed: {task[:30]}... (Note: rust claw binary not found, using demo mock)",
+            "success": False,
+            "output": f"Mock failed: {task[:30]}... (Error: rust claw binary not found, execution blocked)",
             "files_modified": ["mock_file.txt"],
             "commands_run": ["echo mock"],
             "errors": [],

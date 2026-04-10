@@ -7,6 +7,7 @@ Gracefully falls back to console if Telegram isn't configured.
 """
 
 import os
+import sys
 import logging
 
 log = logging.getLogger("TelegramHITL")
@@ -46,6 +47,9 @@ class TelegramHITL:
             if details:
                 for k, v in details.items():
                     print(f"   • {k}: {v}")
+            if not sys.stdin.isatty():
+                print("  ⚠️ Non-interactive environment detected. Auto-rejecting HITL request.")
+                return False
             ans = input("  Approve? (y/n): ").strip().lower()
             return ans == "y"
 
@@ -75,5 +79,8 @@ class TelegramHITL:
             print(f"  ⚠️  Telegram send failed: {e}")
 
         # Console fallback after sending notification
+        if not sys.stdin.isatty():
+            print("\n  ⚠️ Non-interactive environment detected. Auto-rejecting HITL request.")
+            return False
         ans = input("\n  [Waiting for approval] (y/n): ").strip()
         return ans.lower() == "y"

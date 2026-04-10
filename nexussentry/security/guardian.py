@@ -51,21 +51,21 @@ PII_PATTERNS = {
 
 # ── Layer 3: Command injection patterns ──
 CMD_INJECTION_PATTERNS = [
-    r";\s*rm\s+-rf",
-    r"\|\|\s*curl",
-    r"&&\s*wget",
+    r"[;&|]\s*(?:rm|curl|wget|bash|sh|nc|netcat|python|perl|ruby|php|exec)\b",
     r"`.*`",              # backtick execution
     r"\$\(.*\)",          # command substitution
     r";\s*shutdown",
     r";\s*reboot",
+    r">\s*/dev/null",
 ]
 
 # ── Layer 4: Path traversal patterns ──
 PATH_TRAVERSAL_PATTERNS = [
-    r"\.\./\.\./",
+    r"(?:\.\.[/\\])+",  # Match overlapping ../ or ..\
+    r"(?i)(?:%2e|\.)(?:%2e|\.)(?:%2f|/|%5c|\\)",  # url-encoded ../
     r"/etc/passwd",
     r"/etc/shadow",
-    r"C:\\Windows\\System32",
+    r"(?i)c:\\windows\\system32",
 ]
 
 # ── Layer 5: Encoded payload patterns ──
@@ -74,6 +74,10 @@ ENCODED_PATTERNS = [
     r"(?:javascript:)",
     r"(?:<script>)",
     r"(?:eval\s*\()",
+    r"(?:exec\s*\()",
+    r"(?:__import__\s*\()",
+    r"(?:os\.system\s*\()",
+    r"(?:subprocess\.)",
 ]
 
 

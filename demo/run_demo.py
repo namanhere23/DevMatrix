@@ -150,6 +150,10 @@ async def main():
                         help="Disable web dashboard")
     parser.add_argument("--skip-health", action="store_true",
                         help="Skip health check")
+    parser.add_argument("--slow", action="store_true",
+                        help="Add dramatic pauses between agent steps for live presentations")
+    parser.add_argument("--security-demo", action="store_true",
+                        help="Run dedicated security attack simulation")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
@@ -162,6 +166,9 @@ async def main():
     # Determine goal
     if args.goal:
         goal = args.goal
+    elif args.security_demo:
+        goal = DEMO_GOALS["4"]
+        print(f"  🚨 SECURITY DEMO MODE: Attempting to bypass Guardian")
     elif args.auto:
         goal = DEMO_GOALS["1"]
         print(f"  🤖 Auto-mode: Using goal 1")
@@ -180,7 +187,7 @@ async def main():
     # Run the swarm
     from nexussentry.main import run_swarm
     enable_dashboard = not args.no_dashboard
-    results = await run_swarm(goal, enable_dashboard=enable_dashboard)
+    results = await run_swarm(goal, enable_dashboard=enable_dashboard, slow=args.slow)
 
     # Print final demo-ready summary
     if results:
@@ -189,12 +196,15 @@ async def main():
         skipped = sum(1 for r in results if r.get("status") == "skipped")
         avg_score = sum(r.get("score", 0) for r in results if isinstance(r.get("score"), (int, float))) / max(1, len(results))
 
-        print(f"\n  📊 Demo Metrics Summary:")
-        print(f"     • {len(results)} sub-tasks processed")
-        print(f"     • {done} completed by agents")
-        print(f"     • {human} approved by human")
-        print(f"     • {skipped} skipped")
-        print(f"     • Average quality score: {avg_score:.0f}/100")
+        print(f"\n\033[96m╔═══════════════════════════════════════════════════════════╗\033[0m")
+        print(f"\033[96m║\033[0m  \033[93m📊 DEMO SCORECARD\033[0m                                        \033[96m║\033[0m")
+        print(f"\033[96m╠═══════════════════════════════════════════════════════════╣\033[0m")
+        print(f"\033[96m║\033[0m  Tasks Processed:       {len(results):<34}\033[96m║\033[0m")
+        print(f"\033[96m║\033[0m  Agents Assigned:       {done:<34}\033[96m║\033[0m")
+        print(f"\033[96m║\033[0m  Human Operations:      {human:<34}\033[96m║\033[0m")
+        print(f"\033[96m║\033[0m  Skipped Operations:    {skipped:<34}\033[96m║\033[0m")
+        print(f"\033[96m║\033[0m  Average Quality Score: {avg_score:.0f}/100{(' ' * 29)}\033[96m║\033[0m")
+        print(f"\033[96m╚═══════════════════════════════════════════════════════════╝\033[0m\n")
 
 
 if __name__ == "__main__":

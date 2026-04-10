@@ -93,6 +93,7 @@ class LLMProvider:
         self._detect_providers()
         self._call_count = 0
         self._provider_usage = {}  # Track which provider was used how many times
+        self._mock_call_counts = {}  # Track mock calls per agent for smart responses
 
     def _detect_providers(self):
         """Scan .env for available API keys."""
@@ -187,7 +188,7 @@ class LLMProvider:
             elif provider == "anthropic":
                 return self._call_anthropic(system, user_msg, max_tokens)
             else:
-                return self._mock_response(system, user_msg)
+                return self._mock_response(system, user_msg, agent_name=agent_name)
         except Exception as e:
             logger.warning(f"  ⚠️  {label} failed: {e}. Trying fallback...")
             return self._fallback_chat(system, user_msg, max_tokens, exclude=provider)
@@ -224,7 +225,7 @@ class LLMProvider:
 
         api_key = self._available["gemini"]
         model = PROVIDER_CONFIG["gemini"]["default_model"]
-        url = f"{PROVIDER_CONFIG['gemini']['base_url']}/models/{model}:generateContent?key={api_key}"
+        url = f"{PROVIDER_CONFIG['gemini']['base_url']}/models/{model}:generateContent"
 
         payload = {
             "contents": [
@@ -239,7 +240,12 @@ class LLMProvider:
             }
         }
 
-        resp = requests.post(url, json=payload, timeout=60)
+        headers = {
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json"
+        }
+
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
         resp.raise_for_status()
         data = resp.json()
 
@@ -346,12 +352,17 @@ class LLMProvider:
             data = resp.json()
             return data["content"][0]["text"]
 
-    def _mock_response(self, system: str, user_msg: str) -> str:
+    def _mock_response(self, system: str, user_msg: str, agent_name: str = "") -> str:
         """
         Generate realistic mock responses for demo mode.
         Detects what kind of response is expected and returns appropriate JSON.
         """
         logger.info("  🎭 Using mock response (no API keys configured)")
+
+        # Track mock calls per agent
+        agent_key = agent_name or "unknown"
+        self._mock_call_counts[agent_key] = self._mock_call_counts.get(agent_key, 0) + 1
+        call_count = self._mock_call_counts[agent_key]
 
         # Detect what the agent expects based on system prompt keywords
         system_lower = system.lower()
@@ -363,30 +374,51 @@ class LLMProvider:
                     {"id": 1, "task": "Scan codebase for SQL injection vulnerabilities in database query functions", "priority": "high"},
                     {"id": 2, "task": "Identify and patch XSS vulnerabilities in user input handling", "priority": "high"},
                     {"id": 3, "task": "Review authentication module for insecure password hashing", "priority": "medium"},
-                    {"id": 4, "task": "Audit file upload handlers for path traversal attacks", "priority": "medium"},
                 ],
                 "estimated_complexity": "complex"
             })
 
         elif "architect" in system_lower or "planner" in system_lower:
-            return json.dumps({
-                "plan_summary": "Implement parameterized queries to prevent SQL injection",
-                "approach": "Replace all string concatenation in SQL queries with parameterized statements using '?' placeholders",
-                "files_to_read": ["db/queries.py", "models/user.py"],
-                "files_to_modify": ["db/queries.py", "api/endpoints.py"],
-                "commands_to_run": ["pytest tests/test_security.py", "bandit -r src/"],
-                "success_criteria": "All SQL queries use parameterized statements; bandit reports 0 SQL injection findings",
-                "risks": ["Existing query patterns may break if column names are dynamic"]
-            })
+            # Different plan based on attempt
+            if call_count == 1:
+                return json.dumps({
+                    "plan_summary": "Implement parameterized queries to prevent SQL injection",
+                    "approach": "Replace all string concatenation in SQL queries with parameterized statements using '?' placeholders",
+                    "files_to_read": ["db/queries.py", "models/user.py"],
+                    "files_to_modify": ["db/queries.py", "api/endpoints.py"],
+                    "commands_to_run": ["pytest tests/test_security.py", "bandit -r src/"],
+                    "success_criteria": "All SQL queries use parameterized statements",
+                    "risks": ["Existing query patterns may break if column names are dynamic"]
+                })
+            else:
+                return json.dumps({
+                    "plan_summary": "Implement strict parameterized queries with input validation (Revised)",
+                    "approach": "Address critic feedback: add robust input validation before parameterized queries.",
+                    "files_to_read": ["db/queries.py", "models/user.py"],
+                    "files_to_modify": ["db/queries.py", "api/endpoints.py", "utils/validation.py"],
+                    "commands_to_run": ["pytest tests/test_security.py", "bandit -r src/"],
+                    "success_criteria": "All SQL queries use parameterized statements AND input validation is added",
+                    "risks": ["More extensive file changes required"]
+                })
 
         elif "critic" in system_lower or "reviewer" in system_lower:
-            return json.dumps({
-                "decision": "approve",
-                "score": 87,
-                "reasoning": "The implementation correctly uses parameterized queries. All identified SQL injection vectors have been addressed. Code is clean and maintainable.",
-                "issues_found": ["Minor: Error messages could leak table names in debug mode"],
-                "suggestions": ["Add integration tests for edge cases with special characters"]
-            })
+            # SMART MOCK: Reject the first attempt to show the feedback loop
+            if call_count == 1:
+                return json.dumps({
+                    "decision": "reject",
+                    "score": 62,
+                    "reasoning": "The implementation correctly uses parameterized queries, BUT completely misses input validation for edge cases.",
+                    "issues_found": ["Critical: Missing input validation before DB queries", "Minor: Error messages leak table names"],
+                    "suggestions": ["Add a strict validation layer before hitting the DB"]
+                })
+            else:
+                return json.dumps({
+                    "decision": "approve",
+                    "score": 88,
+                    "reasoning": "The revised implementation uses parameterized queries AND includes robust input validation. Security improved.",
+                    "issues_found": ["Minor: Performance impact of extra validation layer (acceptable)"],
+                    "suggestions": ["Add integration tests for edge cases with special characters"]
+                })
 
         elif "security" in system_lower or "scanner" in system_lower:
             return json.dumps({"safe": True})
