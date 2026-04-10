@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusSentry — Agent Swarm Dashboard</title>
+    <meta name="description" content="Real-time observability dashboard for NexusSentry multi-agent orchestration system">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* ═══════════════════════════════════════════════
+           CSS DESIGN SYSTEM — NexusSentry Dashboard
+           Dark glassmorphism + neon accents
+           ═══════════════════════════════════════════════ */
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: rgba(18, 18, 30, 0.7);
+            --bg-glass: rgba(255, 255, 255, 0.03);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(99, 102, 241, 0.3);
+
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888a8;
+            --text-muted: #555570;
+
+            --accent-blue: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-pink: #ec4899;
+
+            --gradient-hero: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+            --gradient-card: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(168,85,247,0.05) 100%);
+
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+
+            --shadow-glow: 0 0 30px rgba(99, 102, 241, 0.15);
+            --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Animated background particles ── */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(99,102,241,0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(168,85,247,0.06) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(236,72,153,0.04) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+            animation: bgPulse 8s ease-in-out infinite alternate;
+        }
+
+        @keyframes bgPulse {
+            0% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        /* ── Header ── */
+        .header {
+            position: relative;
+            z-index: 10;
+            padding: 24px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-glass);
+            backdrop-filter: blur(20px);
+            background: rgba(10, 10, 15, 0.8);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            width: 42px; height: 42px;
+            background: var(--gradient-hero);
+            border-radius: var(--radius-md);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+            box-shadow: var(--shadow-glow);
+            animation: logoGlow 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes logoGlow {
+            0% { box-shadow: 0 0 15px rgba(99,102,241,0.3); }
+            100% { box-shadow: 0 0 30px rgba(168,85,247,0.5); }
+        }
+
+        .header h1 {
+            font-size: 22px;
+            font-weight: 800;
+            background: var(--gradient-hero);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+
+        .header-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 400;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.running {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-badge.complete {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-blue);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .status-badge.waiting {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* ── Main Layout ── */
+        .main {
+            position: relative;
+            z-index: 10;
+            padding: 24px 32px;
+            max-width: 1440px;
+            margin: 0 auto;
+        }
+
+        /* ── Goal Banner ── */
+        .goal-banner {
+            background: var(--gradient-card);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            padding: 20px 28px;
+            margin-bottom: 24px;
+            backdrop-filter: blur(10px);
+        }
+
+        .goal-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .goal-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        /* ── Metrics Grid ── */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: var(--gradient-hero);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .metric-card:hover::before { opacity: 1; }
+        .metric-card:hover {
+            border-color: var(--border-glow);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .metric-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .metric-value {
+            font-size: 32px;
+            font-weight: 800;
+            font-family: var(--font-mono);
+            background: var(--gradient-hero);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 4px;
+        }
+
+        /* ── Two-column Layout ── */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 900px) {
+            .content-grid { grid-template-columns: 1fr; }
+            .metrics { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        /* ── Agent Status Panel ── */
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-glass);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-secondary);
+        }
+
+        .panel-body {
+            padding: 16px 20px;
+        }
+
+        /* ── Agent Cards ── */
+        .agent-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            border-radius: var(--radius-md);
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+        }
+
+        .agent-card:last-child { margin-bottom: 0; }
+
+        .agent-card.active {
+            background: rgba(99, 102, 241, 0.08);
+            border-color: rgba(99, 102, 241, 0.2);
+        }
+
+        .agent-card.active .agent-avatar {
+            animation: agentPulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes agentPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(99,102,241,0); }
+        }
+
+        .agent-avatar {
+            width: 42px; height: 42px;
+            border-radius: var(--radius-md);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .agent-avatar.scout { background: rgba(6, 182, 212, 0.15); }
+        .agent-avatar.architect { background: rgba(168, 85, 247, 0.15); }
+        .agent-avatar.fixer { background: rgba(245, 158, 11, 0.15); }
+        .agent-avatar.critic { background: rgba(236, 72, 153, 0.15); }
+        .agent-avatar.guardian { background: rgba(16, 185, 129, 0.15); }
+        .agent-avatar.hitl { background: rgba(239, 68, 68, 0.15); }
+
+        .agent-info { flex: 1; min-width: 0; }
+
+        .agent-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .agent-role {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .agent-status-tag {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 100px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .agent-status-tag.idle {
+            background: rgba(85, 85, 112, 0.2);
+            color: var(--text-muted);
+        }
+
+        .agent-status-tag.working {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--accent-blue);
+            animation: tagGlow 1.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes tagGlow {
+            0% { box-shadow: 0 0 0 rgba(99,102,241,0); }
+            100% { box-shadow: 0 0 8px rgba(99,102,241,0.3); }
+        }
+
+        .agent-status-tag.done {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        /* ── Event Feed ── */
+        .event-feed {
+            max-height: 500px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-glass) transparent;
+        }
+
+        .event-feed::-webkit-scrollbar { width: 6px; }
+        .event-feed::-webkit-scrollbar-track { background: transparent; }
+        .event-feed::-webkit-scrollbar-thumb {
+            background: var(--border-glass);
+            border-radius: 3px;
+        }
+
+        .event-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            animation: eventSlideIn 0.3s ease-out;
+        }
+
+        @keyframes eventSlideIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .event-time {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            min-width: 60px;
+            padding-top: 2px;
+        }
+
+        .event-icon {
+            font-size: 16px;
+            min-width: 24px;
+            text-align: center;
+        }
+
+        .event-content { flex: 1; min-width: 0; }
+
+        .event-agent {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .event-action {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+        }
+
+        /* ── Progress Bar ── */
+        .progress-section {
+            margin-bottom: 24px;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .progress-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .progress-count {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .progress-bar-track {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 100px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--gradient-hero);
+            border-radius: 100px;
+            transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+            position: relative;
+        }
+
+        .progress-bar-fill::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 30px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+            animation: shimmer 1.5s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
+        }
+
+        /* ── Architecture Diagram ── */
+        .arch-diagram {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .arch-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .arch-node {
+            padding: 8px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            border: 1px solid var(--border-glass);
+            transition: all 0.3s ease;
+        }
+
+        .arch-node:hover {
+            transform: scale(1.05);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .arch-node.scout { background: rgba(6,182,212,0.12); color: var(--accent-cyan); border-color: rgba(6,182,212,0.3); }
+        .arch-node.architect { background: rgba(168,85,247,0.12); color: var(--accent-purple); border-color: rgba(168,85,247,0.3); }
+        .arch-node.fixer { background: rgba(245,158,11,0.12); color: var(--accent-amber); border-color: rgba(245,158,11,0.3); }
+        .arch-node.critic { background: rgba(236,72,153,0.12); color: var(--accent-pink); border-color: rgba(236,72,153,0.3); }
+        .arch-node.guardian { background: rgba(16,185,129,0.12); color: var(--accent-green); border-color: rgba(16,185,129,0.3); }
+        .arch-node.claw { background: rgba(239,68,68,0.12); color: var(--accent-red); border-color: rgba(239,68,68,0.3); }
+
+        .arch-arrow {
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        /* ── Tagline ── */
+        .tagline {
+            text-align: center;
+            padding: 32px;
+            margin-top: 24px;
+        }
+
+        .tagline-text {
+            font-size: 16px;
+            font-weight: 700;
+            background: var(--gradient-hero);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+        }
+
+        .tagline-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        /* ── Loading Skeleton ── */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-card) 25%, rgba(255,255,255,0.05) 50%, var(--bg-card) 75%);
+            background-size: 200% 100%;
+            animation: skeletonShimmer 1.5s ease-in-out infinite;
+            border-radius: var(--radius-sm);
+        }
+
+        @keyframes skeletonShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* ── Scrollbar global ── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+    <!-- ═══ HEADER ═══ -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">🧠</div>
+            <div>
+                <h1>NexusSentry</h1>
+                <div class="header-subtitle">Agent Swarm Dashboard</div>
+            </div>
+        </div>
+        <div id="statusBadge" class="status-badge waiting">
+            <span class="status-dot"></span>
+            <span id="statusText">Waiting</span>
+        </div>
+    </header>
+
+    <!-- ═══ MAIN CONTENT ═══ -->
+    <main class="main">
+
+        <!-- Goal Banner -->
+        <div class="goal-banner" id="goalBanner">
+            <div class="goal-label">Current Mission</div>
+            <div class="goal-text" id="goalText">Waiting for swarm activation...</div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-section">
+            <div class="progress-header">
+                <span class="progress-label">Sub-task Progress</span>
+                <span class="progress-count" id="progressCount">0 / 0</span>
+            </div>
+            <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progressBar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Metrics -->
+        <div class="metrics">
+            <div class="metric-card">
+                <div class="metric-icon">⏱️</div>
+                <div class="metric-value" id="metricTime">0.0s</div>
+                <div class="metric-label">Elapsed</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">📊</div>
+                <div class="metric-value" id="metricEvents">0</div>
+                <div class="metric-label">Events</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">✅</div>
+                <div class="metric-value" id="metricApprovals">0</div>
+                <div class="metric-label">Approvals</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">❌</div>
+                <div class="metric-value" id="metricRejections">0</div>
+                <div class="metric-label">Rejections</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">🛡️</div>
+                <div class="metric-value" id="metricSecurity">7</div>
+                <div class="metric-label">Security Layers</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon">🤖</div>
+                <div class="metric-value" id="metricAgents">0</div>
+                <div class="metric-label">Agents Active</div>
+            </div>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="content-grid">
+
+            <!-- Left: Agent Status -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">Agent Status</span>
+                    <span style="font-size:12px;color:var(--text-muted)" id="agentSessionId">—</span>
+                </div>
+                <div class="panel-body">
+                    <div class="agent-card" id="agentGuardian">
+                        <div class="agent-avatar guardian">🛡️</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Guardian</div>
+                            <div class="agent-role">7-Layer Security Scanner</div>
+                        </div>
+                        <span class="agent-status-tag idle" id="tagGuardian">Idle</span>
+                    </div>
+                    <div class="agent-card" id="agentScout">
+                        <div class="agent-avatar scout">🔍</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Scout</div>
+                            <div class="agent-role">Task Decomposer</div>
+                        </div>
+                        <span class="agent-status-tag idle" id="tagScout">Idle</span>
+                    </div>
+                    <div class="agent-card" id="agentArchitect">
+                        <div class="agent-avatar architect">🏗️</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Architect</div>
+                            <div class="agent-role">Technical Planner</div>
+                        </div>
+                        <span class="agent-status-tag idle" id="tagArchitect">Idle</span>
+                    </div>
+                    <div class="agent-card" id="agentFixer">
+                        <div class="agent-avatar fixer">🔧</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Fixer</div>
+                            <div class="agent-role">Rust Sandbox Executor</div>
+                        </div>
+                        <span class="agent-status-tag idle" id="tagFixer">Idle</span>
+                    </div>
+                    <div class="agent-card" id="agentCritic">
+                        <div class="agent-avatar critic">📋</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Critic</div>
+                            <div class="agent-role">Quality Gate Auditor</div>
+                        </div>
+                        <span class="agent-status-tag idle" id="tagCritic">Idle</span>
+                    </div>
+                    <div class="agent-card" id="agentHITL">
+                        <div class="agent-avatar hitl">🚨</div>
+                        <div class="agent-info">
+                            <div class="agent-name">HITL</div>
+                            <div class="agent-role">Human-in-the-Loop (Telegram)</div>
+                        </div>
+                        <span class="agent-status-tag idle" id="tagHITL">Idle</span>
+                    </div>
+
+                    <!-- Mini Architecture -->
+                    <div class="arch-diagram">
+                        <div style="font-size:11px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">
+                            Swarm Flow
+                        </div>
+                        <div class="arch-row">
+                            <div class="arch-node guardian">🛡️ Guard</div>
+                            <span class="arch-arrow">→</span>
+                            <div class="arch-node scout">🔍 Scout</div>
+                            <span class="arch-arrow">→</span>
+                            <div class="arch-node architect">🏗️ Architect</div>
+                        </div>
+                        <div class="arch-row">
+                            <span class="arch-arrow" style="transform:rotate(90deg)">↓</span>
+                        </div>
+                        <div class="arch-row">
+                            <div class="arch-node critic">📋 Critic</div>
+                            <span class="arch-arrow">←</span>
+                            <div class="arch-node claw">🦀 Rust Sandbox</div>
+                            <span class="arch-arrow">←</span>
+                            <div class="arch-node fixer">🔧 Fixer</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Live Event Feed -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">Live Event Feed</span>
+                    <span style="font-size:12px;color:var(--text-muted)" id="eventCount">0 events</span>
+                </div>
+                <div class="panel-body">
+                    <div class="event-feed" id="eventFeed">
+                        <div style="text-align:center;padding:40px;color:var(--text-muted)">
+                            <div style="font-size:32px;margin-bottom:8px">📡</div>
+                            <div>Waiting for agent events...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tagline Footer -->
+        <div class="tagline">
+            <div class="tagline-text">Python for the Brain. Rust for the Blade.</div>
+            <div class="tagline-sub">NexusSentry — Multi-Agent Orchestration & Swarm Intelligence</div>
+        </div>
+    </main>
+
+    <!-- ═══ JAVASCRIPT — Real-time polling ═══ -->
+    <script>
+        const POLL_INTERVAL = 1000; // 1 second
+        const AGENT_ICONS = {
+            'Scout': '🔍', 'Architect': '🏗️', 'Fixer': '🔧',
+            'Critic': '📋', 'HITL': '🚨', 'Guardian': '🛡️', 'System': '⚙️'
+        };
+
+        let lastEventCount = 0;
+        let isFirstLoad = true;
+
+        // ── Main polling loop ──
+        async function pollDashboard() {
+            try {
+                const res = await fetch('/api/state');
+                if (!res.ok) return;
+                const state = await res.json();
+                updateDashboard(state);
+            } catch (e) {
+                // Server not ready yet — silent retry
+            }
+        }
+
+        function updateDashboard(state) {
+            // Status badge
+            const badge = document.getElementById('statusBadge');
+            const statusText = document.getElementById('statusText');
+            badge.className = 'status-badge ' + (state.status || 'waiting');
+            statusText.textContent = capitalize(state.status || 'waiting');
+
+            // Goal
+            if (state.goal) {
+                document.getElementById('goalText').textContent = state.goal;
+            }
+
+            // Session ID
+            if (state.session_id) {
+                document.getElementById('agentSessionId').textContent = 'Session: ' + state.session_id;
+            }
+
+            // Progress
+            const done = state.tasks_done || 0;
+            const total = state.tasks_total || 0;
+            document.getElementById('progressCount').textContent = done + ' / ' + total;
+            const pct = total > 0 ? (done / total * 100) : 0;
+            document.getElementById('progressBar').style.width = pct + '%';
+
+            // Metrics
+            document.getElementById('metricTime').textContent = (state.elapsed || 0).toFixed(1) + 's';
+            document.getElementById('metricEvents').textContent = state.total_events || 0;
+            document.getElementById('metricAgents').textContent = (state.agents_used || []).length;
+
+            // Count approvals and rejections from events
+            let approvals = 0, rejections = 0;
+            (state.events || []).forEach(e => {
+                if (e.action === 'review_done') {
+                    if (e.data && e.data.decision === 'approve') approvals++;
+                    if (e.data && e.data.decision === 'reject') rejections++;
+                }
+            });
+            document.getElementById('metricApprovals').textContent = approvals;
+            document.getElementById('metricRejections').textContent = rejections;
+
+            // Agent status cards
+            updateAgentStatus(state);
+
+            // Event feed
+            updateEventFeed(state.events || []);
+        }
+
+        function updateAgentStatus(state) {
+            const agents = ['Guardian', 'Scout', 'Architect', 'Fixer', 'Critic', 'HITL'];
+            const currentAgent = state.current_agent || '';
+
+            agents.forEach(agent => {
+                const card = document.getElementById('agent' + agent);
+                const tag = document.getElementById('tag' + agent);
+                if (!card || !tag) return;
+
+                // Check if this agent has done any work
+                const agentEvents = (state.events || []).filter(e => e.agent === agent);
+                const isActive = currentAgent === agent && state.status === 'running';
+                const hasDone = agentEvents.length > 0;
+
+                card.className = 'agent-card' + (isActive ? ' active' : '');
+
+                if (isActive) {
+                    tag.className = 'agent-status-tag working';
+                    tag.textContent = 'Working';
+                } else if (state.status === 'complete' && hasDone) {
+                    tag.className = 'agent-status-tag done';
+                    tag.textContent = 'Done';
+                } else if (hasDone) {
+                    tag.className = 'agent-status-tag done';
+                    tag.textContent = 'Done';
+                } else {
+                    tag.className = 'agent-status-tag idle';
+                    tag.textContent = 'Idle';
+                }
+            });
+        }
+
+        function updateEventFeed(events) {
+            if (events.length === 0) return;
+            if (events.length === lastEventCount && !isFirstLoad) return;
+
+            const feed = document.getElementById('eventFeed');
+            const countEl = document.getElementById('eventCount');
+            countEl.textContent = events.length + ' events';
+
+            // Build feed HTML
+            let html = '';
+            // Show last 30 events, reversed (newest first)
+            const visible = events.slice(-30).reverse();
+            visible.forEach(e => {
+                const icon = AGENT_ICONS[e.agent] || '🤖';
+                const time = e.t !== undefined ? ('+' + e.t.toFixed(1) + 's') : '';
+                const action = formatAction(e.action);
+                html += `
+                    <div class="event-item">
+                        <span class="event-time">${time}</span>
+                        <span class="event-icon">${icon}</span>
+                        <div class="event-content">
+                            <span class="event-agent">${e.agent}</span>
+                            <span class="event-action"> → ${action}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            feed.innerHTML = html;
+            lastEventCount = events.length;
+            isFirstLoad = false;
+        }
+
+        function formatAction(action) {
+            // Make actions human-readable
+            return action
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function capitalize(s) {
+            return s.charAt(0).toUpperCase() + s.slice(1);
+        }
+
+        // ── Start polling ──
+        setInterval(pollDashboard, POLL_INTERVAL);
+        pollDashboard(); // Initial load
+    </script>
+</body>
+</html>
