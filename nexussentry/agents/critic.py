@@ -6,7 +6,7 @@ Validates the Fixer's output against strict quality criteria.
 Can approve, reject (loops back to Architect), or escalate to human.
 
 Role in the swarm: Quality gate. The ruthless reviewer.
-Provider preference: Grok (fast reasoning for quick reviews)
+Provider preference: Groq (fast reasoning for quick reviews)
 """
 
 import json
