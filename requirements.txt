@@ -3,4 +3,4 @@ python-dotenv
 requests
 anthropic
 python-telegram-bot
-# pocketpaw>=0.1.0  # Optional: pip install nexussentry[pocketpaw]
+
