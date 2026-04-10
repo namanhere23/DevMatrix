@@ -30,6 +30,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_state()
         elif self.path == "/api/events":
             self._serve_events()
+        elif self.path == "/api/providers":
+            self._serve_providers()
         else:
             self.send_error(404)
 
@@ -57,7 +59,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         body = json.dumps(state, default=str).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -69,7 +70,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         since = 0
         if "?" in self.path:
             params = dict(p.split("=") for p in self.path.split("?")[1].split("&") if "=" in p)
-            since = int(params.get("since", 0))
+            try:
+                since = int(params.get("since", 0))
+            except ValueError:
+                since = 0
 
         if _tracer:
             events = _tracer.get_events_since(since)
@@ -80,7 +84,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
                           default=str).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_providers(self):
+        """Return provider statistics."""
+        try:
+            from nexussentry.providers.llm_provider import get_provider
+            stats = get_provider().stats()
+        except ImportError:
+            stats = {}
+
+        body = json.dumps(stats, default=str).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -98,7 +116,7 @@ def start_dashboard(tracer, port: int = 7777) -> threading.Thread:
     global _tracer
     _tracer = tracer
 
-    server = HTTPServer(("0.0.0.0", port), DashboardHandler)
+    server = HTTPServer(("127.0.0.1", port), DashboardHandler)
 
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

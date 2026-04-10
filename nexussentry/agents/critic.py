@@ -103,13 +103,13 @@ WHAT FIXER DID:
             logger.error(f"Critic review failed: {e}")
             # On error, give a conditional approve to avoid blocking the pipeline
             fallback = {
-                "decision": "approve",
-                "score": 70,
-                "reasoning": f"Critic review failed ({e}). Auto-approving with low confidence.",
+                "decision": "reject",
+                "score": 0,
+                "reasoning": f"Critic review failed ({e}). Auto-rejecting for safety.",
                 "issues_found": ["Critic review unavailable"],
-                "suggestions": ["Manual review recommended"]
+                "suggestions": ["Manual review required"]
             }
-            print(f"\n📋 Critic (fallback): Auto-approved with low confidence (70/100)")
+            print(f"\n📋 Critic (fallback): Auto-rejected for safety (0/100)")
             if tracer:
                 tracer.log("Critic", "review_fallback", {"error": str(e)})
             return fallback

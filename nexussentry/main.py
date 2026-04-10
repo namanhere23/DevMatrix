@@ -45,6 +45,7 @@ from nexussentry.observability.dashboard import start_dashboard
 from nexussentry.security.guardian import GuardianAI
 from nexussentry.utils.response_cache import get_cache
 from nexussentry.providers.llm_provider import get_provider
+from nexussentry.utils.swarm_memory import SwarmMemory
 
 
 def print_banner():
@@ -67,7 +68,7 @@ def print_banner():
     print(banner)
 
 
-async def run_swarm(user_goal: str, enable_dashboard: bool = True):
+async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = False):
     """
     Main orchestration loop.
 
@@ -92,6 +93,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True):
     hitl = TelegramHITL()
     cache = get_cache()
     provider = get_provider()
+    memory = SwarmMemory()
 
     # ── Show provider info ──
     print(f"  🤖 AI Providers: {provider.provider_summary_str()}")
@@ -134,7 +136,10 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True):
     # ══════════════════════════════════════════════
     # STEP 1: Scout decomposes the goal
     # ══════════════════════════════════════════════
-    decomposition = scout.decompose(user_goal, tracer)
+    if slow: await asyncio.sleep(2)
+    context = memory.summarize_context()
+    scout_input = user_goal if not context else f"{user_goal}\n\nContext:\n{context}"
+    decomposition = scout.decompose(scout_input, tracer)
     sub_tasks = decomposition.get("sub_tasks", [])
 
     if not sub_tasks:
@@ -145,9 +150,9 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True):
     results = []
 
     # ══════════════════════════════════════════════
-    # STEPS 2-4: Architect → Fixer → Critic loop
+    # STEPS 2-4: Architect → Fixer → Critic loop (PARALLEL)
     # ══════════════════════════════════════════════
-    for task_obj in sub_tasks:
+    async def process_sub_task(task_obj):
         task_id = task_obj.get("id", "?")
         task_desc = task_obj.get("task", "Unknown task")
         priority = task_obj.get("priority", "medium").upper()
@@ -159,21 +164,32 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True):
         feedback = ""
 
         for attempt in range(3):
-            print(f"\n    ▸ Attempt {attempt + 1}/3")
+            print(f"\n    ▸ Attempt {attempt + 1}/3 for Sub-task {task_id}")
 
             # ── Step 2: Architect plans ──
-            plan = architect.plan(
+            if slow: await asyncio.sleep(1.5)
+            plan_context = memory.summarize_context()
+            plan = await asyncio.to_thread(
+                architect.plan,
                 sub_task=task_desc,
                 feedback=feedback,
+                context=plan_context,
                 tracer=tracer
             )
 
             # ── Step 3: Fixer executes ──
-            result = fixer.execute(plan, tracer)
+            if slow: await asyncio.sleep(2)
+            result = await asyncio.to_thread(
+                fixer.execute,
+                plan,
+                tracer
+            )
 
             # ── Step 4: Critic reviews ──
+            if slow: await asyncio.sleep(1.5)
             critic_agent = CriticAgent(max_rejections=2)  # Fresh per sub-task
-            verdict = critic_agent.review(
+            verdict = await asyncio.to_thread(
+                critic_agent.review,
                 original_task=task_desc,
                 plan=plan,
                 fixer_result=result,
@@ -182,14 +198,19 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True):
 
             if verdict["decision"] == "approve":
                 score = verdict.get("score", "?")
-                results.append({
+                print(f"\n    ✅ Sub-task {task_id} complete! (score: {score}/100)")
+                
+                # Record to SwarmMemory
+                memory.record_task_result(task_id, task_desc, f"Completed with score {score}")
+                for f in plan.get("files_to_modify", []):
+                    memory.mark_file_modified(f)
+                    
+                return {
                     "task": task_desc,
                     "status": "done",
                     "score": score,
                     "attempts": attempt + 1
-                })
-                print(f"\n    ✅ Sub-task {task_id} complete! (score: {score}/100)")
-                break
+                }
 
             elif verdict["decision"] == "escalate_to_human":
                 tracer.log("HITL", "approval_requested", {"task": task_desc})
@@ -204,21 +225,20 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True):
 
                 if approved:
                     tracer.log("HITL", "human_approved", {})
-                    results.append({
+                    print(f"    ✅ Human approved sub-task {task_id}. Moving on.")
+                    return {
                         "task": task_desc,
                         "status": "human_approved",
                         "attempts": attempt + 1
-                    })
-                    print("    ✅ Human approved. Moving on.")
+                    }
                 else:
                     tracer.log("HITL", "human_rejected", {})
-                    results.append({
+                    print(f"    ❌ Human rejected sub-task {task_id}. Skipping.")
+                    return {
                         "task": task_desc,
                         "status": "skipped",
                         "attempts": attempt + 1
-                    })
-                    print("    ❌ Human rejected. Skipping.")
-                break
+                    }
 
             else:
                 # Critic rejected → loop back with feedback
@@ -229,7 +249,21 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True):
                     f"Issues: {', '.join(issues)}. "
                     f"Suggestions: {', '.join(verdict.get('suggestions', []))}"
                 )
-                print(f"    🔄 Retrying with Critic feedback...")
+                memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
+                print(f"    🔄 Retrying sub-task {task_id} with Critic feedback...")
+        
+        # Max attempts reached
+        return {
+            "task": task_desc,
+            "status": "failed",
+            "score": 0,
+            "attempts": 3
+        }
+
+    # Execute all sub-tasks concurrently
+    parallel_tasks = [process_sub_task(task) for task in sub_tasks]
+    results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+
 
     # ══════════════════════════════════════════════
     # FINAL SUMMARY

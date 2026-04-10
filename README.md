@@ -6,7 +6,11 @@
 
 NexusSentry is a coordinated multi-agent system where **4 specialized AI agents** communicate like a real engineering team to solve complex, multi-step coding tasks — with human oversight, security scanning, and real-time observability.
 
-**v2.0 — Now with Multi-Provider AI: Gemini │ Grok │ OpenRouter │ Anthropic**
+**v2.5 — Hackathon-Ready Edition**
+- 🧠 **Swarm Memory**: Agents now share thread-safe context across sub-tasks
+- ⚡ **Parallel Execution**: Sub-tasks are executed concurrently using `asyncio.gather`
+- 🖥️ **Enhanced Dashboard**: Real-time observability with provider analytics and interactive Critic score trends
+- 🤖 **Multi-Provider AI**: Gemini │ Grok │ OpenRouter │ Anthropic
 
 ---
 

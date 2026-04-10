@@ -760,6 +760,52 @@
             </div>
         </div>
 
+        <!-- Second Row: Provider and Quality Analytics -->
+        <div class="content-grid" style="margin-top:24px;">
+            <!-- Left: Provider Usage Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">Provider Analytics</span>
+                    <span style="font-size:12px;color:var(--text-muted)" id="totalProviderCalls">0 calls</span>
+                </div>
+                <div class="panel-body">
+                    <div id="providerBars" style="display:flex; flex-direction:column; gap:12px;">
+                        <div style="text-align:center;padding:20px;color:var(--text-muted)">
+                            Waiting for API calls...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Quality Score Trend -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">Critic Rejection Loop</span>
+                    <span style="font-size:12px;color:var(--text-muted)" id="latestScore">Score: —</span>
+                </div>
+                <div class="panel-body">
+                    <div class="arch-diagram" id="rejectionLoopVisual">
+                        <div class="arch-row" style="margin-bottom: 12px;">
+                            <div class="arch-node architect" id="nodeArchitect">🏗️ Architect</div>
+                            <span class="arch-arrow">→</span>
+                            <div class="arch-node fixer" id="nodeFixer">🔧 Fixer</div>
+                            <span class="arch-arrow">→</span>
+                            <div class="arch-node critic" id="nodeCritic">📋 Critic</div>
+                        </div>
+                        <div style="font-size:12px; color:var(--text-muted); text-align:center; min-height:40px; display:flex; align-items:center; justify-content:center; padding: 0 20px;" id="feedbackLoopStatus">
+                            Waiting for sub-task execution...
+                        </div>
+                        <div style="width:100%; margin-top:16px;">
+                            <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">Score Timeline</div>
+                            <div style="display:flex; gap:4px; height:24px; align-items:flex-end;" id="scoreTimelineBars">
+                                <!-- Bars will go here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Tagline Footer -->
         <div class="tagline">
             <div class="tagline-text">Python for the Brain. Rust for the Blade.</div>
@@ -781,10 +827,20 @@
         // ── Main polling loop ──
         async function pollDashboard() {
             try {
-                const res = await fetch('/api/state');
-                if (!res.ok) return;
-                const state = await res.json();
-                updateDashboard(state);
+                const [stateRes, providerRes] = await Promise.all([
+                    fetch('/api/state').catch(() => null),
+                    fetch('/api/providers').catch(() => null)
+                ]);
+
+                if (stateRes && stateRes.ok) {
+                    const state = await stateRes.json();
+                    updateDashboard(state);
+                }
+
+                if (providerRes && providerRes.ok) {
+                    const providerStats = await providerRes.json();
+                    updateProviders(providerStats);
+                }
             } catch (e) {
                 // Server not ready yet — silent retry
             }
@@ -835,6 +891,9 @@
 
             // Event feed
             updateEventFeed(state.events || []);
+
+            // Critic Feedback loop visual
+            updateRejectionLoopVisuals(state.events || []);
         }
 
         function updateAgentStatus(state) {
@@ -887,11 +946,11 @@
                 const action = formatAction(e.action);
                 html += `
                     <div class="event-item">
-                        <span class="event-time">${time}</span>
-                        <span class="event-icon">${icon}</span>
+                        <span class="event-time">${escapeHtml(time)}</span>
+                        <span class="event-icon">${escapeHtml(icon)}</span>
                         <div class="event-content">
-                            <span class="event-agent">${e.agent}</span>
-                            <span class="event-action"> → ${action}</span>
+                            <span class="event-agent">${escapeHtml(e.agent)}</span>
+                            <span class="event-action"> → ${escapeHtml(action)}</span>
                         </div>
                     </div>
                 `;
@@ -913,9 +972,126 @@
             return s.charAt(0).toUpperCase() + s.slice(1);
         }
 
+        // ── Providers & Critic Loop Analytics ──
+        function updateProviders(stats) {
+            if (!stats || !stats.provider_usage) return;
+            const usage = stats.provider_usage;
+            const total = stats.total_calls || sumValues(usage);
+            document.getElementById('totalProviderCalls').textContent = total + ' calls';
+
+            if (total === 0) return;
+
+            const colors = {
+                gemini: 'var(--accent-blue)',
+                grok: 'var(--accent-purple)',
+                openrouter: 'var(--accent-cyan)',
+                anthropic: 'var(--accent-amber)',
+                mock: 'var(--text-muted)'
+            };
+
+            let html = '';
+            for (const [provider, count] of Object.entries(usage)) {
+                if (count === 0) continue;
+                const pct = (count / total * 100);
+                const color = colors[provider] || colors.mock;
+                html += `
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <div style="display:flex; justify-content:space-between; font-size:12px;">
+                            <span style="font-weight:600; color:var(--text-primary)">${capitalize(provider)}</span>
+                            <span style="font-family:var(--font-mono); color:var(--text-secondary)">${count} (${pct.toFixed(0)}%)</span>
+                        </div>
+                        <div style="width:100%; height:6px; background:rgba(255,255,255,0.05); border-radius:100px; overflow:hidden;">
+                            <div style="height:100%; background:${color}; width:${pct}%; transition:width 0.5s ease;"></div>
+                        </div>
+                    </div>
+                `;
+            }
+            if (html) {
+                document.getElementById('providerBars').innerHTML = html;
+            }
+        }
+
+        function sumValues(obj) {
+            return Object.values(obj).reduce((a, b) => a + b, 0);
+        }
+
+        let isAnimating = false;
+        let rejectScores = [];
+
+        function updateRejectionLoopVisuals(events) {
+            if (!events) return;
+            const statusEl = document.getElementById('feedbackLoopStatus');
+            const scoreEl = document.getElementById('latestScore');
+            const timelineEl = document.getElementById('scoreTimelineBars');
+            
+            // Look for recent relevant events
+            const recent = events.slice(-10);
+            
+            recent.forEach(e => {
+                if (e.action === 'review_done') {
+                    const decision = e.data?.decision;
+                    const score = e.data?.score;
+                    if (score && !rejectScores.includes(score)) {
+                         rejectScores.push(score);
+                    }
+                    scoreEl.textContent = 'Score: ' + (score || '—');
+                    
+                    if (decision === 'reject') {
+                        statusEl.innerHTML = `<span style="color:var(--accent-pink); font-weight:600;">⚠️ Rejected (Score: ${escapeHtml(score)})</span><br/>Feedback sent to Architect for retry.`;
+                        flashNode('nodeCritic', 'var(--accent-pink)');
+                        setTimeout(() => flashNode('nodeArchitect', 'var(--accent-purple)'), 500);
+                    } else if (decision === 'approve') {
+                        statusEl.innerHTML = `<span style="color:var(--accent-green); font-weight:600;">✅ Approved (Score: ${escapeHtml(score)})</span><br/>Moving to next sub-task.`;
+                        flashNode('nodeCritic', 'var(--accent-green)');
+                    }
+                } else if (e.action === 'plan_done') {
+                    statusEl.innerHTML = `Architect created a plan. Passing to Fixer.`;
+                    flashNode('nodeArchitect', 'var(--accent-purple)');
+                } else if (e.action === 'execute_done') {
+                    statusEl.innerHTML = `Fixer executed plan. Awaiting Critic review.`;
+                    flashNode('nodeFixer', 'var(--accent-amber)');
+                }
+            });
+
+            // Draw sparkline bar chart
+            if (rejectScores.length > 0) {
+                let barsHtml = '';
+                rejectScores.forEach(score => {
+                    const height = Math.max(10, score);
+                    const isReject = score < 70;
+                    const color = isReject ? 'var(--accent-pink)' : 'var(--accent-green)';
+                    barsHtml += `<div style="width:20px; height:${height}%; background:${color}; border-radius:3px 3px 0 0; opacity:0.8;" title="Score: ${score}"></div>`;
+                });
+                timelineEl.innerHTML = barsHtml;
+            }
+        }
+
+        function flashNode(nodeId, color) {
+            const el = document.getElementById(nodeId);
+            if (!el) return;
+            el.style.transform = 'scale(1.1)';
+            el.style.boxShadow = `0 0 15px ${color}`;
+            el.style.borderColor = color;
+            setTimeout(() => {
+                el.style.transform = 'scale(1)';
+                el.style.boxShadow = 'none';
+                // keep original border logic by removing inline border
+                el.style.borderColor = ''; 
+            }, 800);
+        }
+
         // ── Start polling ──
         setInterval(pollDashboard, POLL_INTERVAL);
         pollDashboard(); // Initial load
+
+        function escapeHtml(unsafe) {
+            return String(unsafe)
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
     </script>
 </body>
 </html>

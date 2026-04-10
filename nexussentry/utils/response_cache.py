@@ -75,6 +75,7 @@ class ResponseCache:
             with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(response, f, indent=2, default=str)
             logger.debug(f"[CACHE STORE] key={key[:8]}...")
+            self._enforce_size_limit()
         except OSError as e:
             logger.warning(f"Cache write failed: {e}")
 
@@ -96,6 +97,15 @@ class ResponseCache:
             self.put(prompt, result, model)
 
         return result
+
+    def _enforce_size_limit(self, max_files=1000):
+        try:
+            files = sorted(self.cache_dir.glob("*.json"), key=os.path.getmtime)
+            if len(files) > max_files:
+                for f in files[:-max_files]:
+                    f.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Cache cleanup failed: {e}")
 
     def stats(self) -> dict:
         """Return cache hit/miss statistics."""
