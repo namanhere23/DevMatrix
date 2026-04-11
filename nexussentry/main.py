@@ -197,6 +197,8 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 sub_task=task_desc,
                 feedback=feedback,
                 context=plan_context,
+                task_priority=priority,
+                estimated_complexity=decomposition.get("estimated_complexity", "medium"),
                 tracer=tracer
             )
 
