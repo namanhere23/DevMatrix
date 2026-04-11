@@ -65,9 +65,11 @@ def run_health_check():
     try:
         from nexussentry.agents.scout import ScoutAgent
         from nexussentry.agents.architect import ArchitectAgent
-        from nexussentry.agents.fixer import FixerAgent
+        from nexussentry.agents.builder import BuilderAgent
+        from nexussentry.agents.integrator import IntegratorAgent
+        from nexussentry.agents.qa_verifier import QAVerifierAgent
         from nexussentry.agents.critic import CriticAgent
-        checks.append(("Agent Imports", True, "4/4 agents"))
+        checks.append(("Agent Imports", True, "6/6 agents"))
     except ImportError as e:
         checks.append(("Agent Imports", False, str(e)))
 
