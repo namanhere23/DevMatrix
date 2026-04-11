@@ -7,7 +7,7 @@
 ║    • Gemini   (Google)    — fast, cheap                   ║
 ║    • Groq     (Groq)      — fast reasoning                ║
 ║    • OpenRouter (multi)   — diverse model access           ║
-║    • Anthropic (Claude)   — premium fallback              ║
+║    • Hugging Face         — fast fallback                  ║
 ║    • Mock                 — demo mode, no keys needed     ║
 ║                                                           ║
 ║  Auto-detects available API keys from .env                ║
@@ -59,17 +59,17 @@ PROVIDER_CONFIG = {
         "label": "OpenRouter",
         "icon": "🌐",
     },
-    "anthropic": {
-        "env_key": "ANTHROPIC_API_KEY",
-        "base_url": "https://api.anthropic.com/v1",
-        "default_model": "claude-sonnet-4-20250514",
-        "label": "Anthropic Claude",
+    "huggingface": {
+        "env_key": "HUGGINGFACE_API_KEY",
+        "base_url": "https://router.huggingface.co/v1",
+        "default_model": "Qwen/Qwen2.5-7B-Instruct",
+        "label": "Hugging Face",
         "icon": "🤖",
     },
 }
 
 # Priority order for auto-selection (cheapest/fastest first)
-AUTO_PRIORITY = ["gemini", "groq", "openrouter", "anthropic"]
+AUTO_PRIORITY = ["gemini", "groq", "openrouter", "huggingface"]
 
 # Agent → preferred provider mapping
 AGENT_PREFERENCES = {
@@ -160,7 +160,7 @@ class LLMProvider:
             system: System prompt
             user_msg: User message
             max_tokens: Maximum tokens in response
-            prefer: Preferred provider ("gemini", "groq", "openrouter", "anthropic", "auto")
+            prefer: Preferred provider ("gemini", "groq", "openrouter", "huggingface", "auto")
             agent_name: Name of the calling agent (for smart routing)
 
         Returns:
@@ -188,8 +188,8 @@ class LLMProvider:
                 return self._call_groq(system, user_msg, max_tokens)
             elif provider == "openrouter":
                 return self._call_openrouter(system, user_msg, max_tokens)
-            elif provider == "anthropic":
-                return self._call_anthropic(system, user_msg, max_tokens)
+            elif provider == "huggingface":
+                return self._call_huggingface(system, user_msg, max_tokens)
             else:
                 return self._mock_response(system, user_msg, agent_name=agent_name)
         except Exception as e:
@@ -209,8 +209,8 @@ class LLMProvider:
                         return self._call_groq(system, user_msg, max_tokens)
                     elif p == "openrouter":
                         return self._call_openrouter(system, user_msg, max_tokens)
-                    elif p == "anthropic":
-                        return self._call_anthropic(system, user_msg, max_tokens)
+                    elif p == "huggingface":
+                        return self._call_huggingface(system, user_msg, max_tokens)
                 except Exception as e:
                     logger.warning(f"  ⚠️  Fallback {p} also failed: {e}")
                     continue
@@ -318,42 +318,33 @@ class LLMProvider:
 
         return data["choices"][0]["message"]["content"]
 
-    def _call_anthropic(self, system: str, user_msg: str, max_tokens: int) -> str:
-        """Call Anthropic Claude API."""
-        try:
-            from anthropic import Anthropic
-            client = Anthropic()
-            resp = client.messages.create(
-                model=PROVIDER_CONFIG["anthropic"]["default_model"],
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user_msg}],
-            )
-            return resp.content[0].text
-        except ImportError:
-            # If anthropic SDK not installed, use raw HTTP
-            import requests
+    def _call_huggingface(self, system: str, user_msg: str, max_tokens: int) -> str:
+        """Call Hugging Face Inference Router API (OpenAI-compatible)."""
+        import requests
 
-            api_key = self._available["anthropic"]
-            url = f"{PROVIDER_CONFIG['anthropic']['base_url']}/messages"
+        api_key = self._available["huggingface"]
+        url = f"{PROVIDER_CONFIG['huggingface']['base_url']}/chat/completions"
+        model = PROVIDER_CONFIG["huggingface"]["default_model"]
 
-            payload = {
-                "model": PROVIDER_CONFIG["anthropic"]["default_model"],
-                "max_tokens": max_tokens,
-                "system": system,
-                "messages": [{"role": "user", "content": user_msg}],
-            }
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.7,
+        }
 
-            headers = {
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
 
-            resp = requests.post(url, json=payload, headers=headers, timeout=60)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["content"][0]["text"]
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
 
     def _mock_response(self, system: str, user_msg: str, agent_name: str = "") -> str:
         """

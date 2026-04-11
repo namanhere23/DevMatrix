@@ -1,5 +1,4 @@
 # Core dependencies
 python-dotenv
 requests
-anthropic
 

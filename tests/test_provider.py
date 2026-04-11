@@ -22,4 +22,4 @@ def test_resolve_provider():
     assert provider._resolve_provider("auto") == "gemini"
     
     # If prefer is unavailable, fallback to auto
-    assert provider._resolve_provider("anthropic") == "gemini"
+    assert provider._resolve_provider("huggingface") == "gemini"
