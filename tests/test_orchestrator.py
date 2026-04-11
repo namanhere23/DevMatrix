@@ -10,7 +10,9 @@ import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from nexussentry.agents.critic import CriticAgent
-from nexussentry.agents.fixer import FixerAgent
+from nexussentry.agents.builder import BuilderAgent
+from nexussentry.agents.integrator import IntegratorAgent
+from nexussentry.agents.qa_verifier import QAVerifierAgent
 
 
 class TestCriticRetryLoop:
@@ -156,11 +158,11 @@ class TestSequentialExecution:
 class TestExecutionMode:
     """Tests that execution mode propagates correctly."""
 
-    def test_fixer_reports_execution_mode(self):
-        """FixerAgent should include execution_mode in results."""
-        fixer = FixerAgent()
+    def test_builder_reports_execution_mode(self):
+        """BuilderAgent should include execution_mode information."""
+        builder = BuilderAgent()
         # Without real Claw binary, mode should be simulated
-        assert fixer.claw.execution_mode in ("real", "simulated")
+        assert builder.claw.execution_mode in ("real", "simulated")
 
     def test_claw_bridge_simulated_mode_no_fake_files(self):
         """Simulated results should NOT contain fake file paths."""
@@ -173,3 +175,56 @@ class TestExecutionMode:
             assert result["files_modified"] == []
             assert result["commands_run"] == []
             assert "[SIMULATED]" in result["output"]
+
+
+class TestBuilderPipeline:
+    """Tests for separated builder/integrator/qa agent flow."""
+
+    def test_partition_files_uses_all_requested_builder_slots(self):
+        """Partitioning should create one chunk per active builder."""
+        builder = BuilderAgent()
+
+        groups = builder._partition_files(
+            ["a.py", "b.py", "c.py", "d.py", "e.py", "f.py"],
+            5,
+        )
+
+        assert len(groups) == 5
+        assert sum(len(group) for group in groups) == 6
+
+    def test_builder_integrator_qa_pipeline(self, monkeypatch):
+        """Builder -> Integrator -> QA pipeline returns coherent outputs."""
+        builder = BuilderAgent()
+        integrator = IntegratorAgent()
+        qa = QAVerifierAgent()
+
+        monkeypatch.setattr(
+            builder,
+            "_generate_code_files",
+            lambda plan, provider: {"app.py": "print('ok')"},
+        )
+
+        builder_result = builder.build({
+            "plan_summary": "Build a small app",
+            "approach": "Use a builder pipeline",
+            "files_to_read": [],
+            "files_to_modify": ["app.py"],
+            "commands_to_run": [],
+            "success_criteria": "app.py exists",
+            "builder_dispatch": {"builder_count": 1},
+        })
+
+        integration_result = integrator.integrate(
+            {"plan_summary": "Build a small app"},
+            builder_result,
+        )
+
+        qa_result = qa.verify(
+            {"plan_summary": "Build a small app", "files_to_modify": ["app.py"]},
+            integration_result["generated_files"],
+            builder_result["builder_reports"],
+        )
+
+        assert builder_result["generated_files"]["app.py"] == "print('ok')"
+        assert integration_result["generated_files"]["app.py"] == "print('ok')"
+        assert qa_result["passed"] is True

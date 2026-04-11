@@ -3,7 +3,7 @@
 Agent B — The Architect
 ━━━━━━━━━━━━━━━━━━━━━━
 Takes a sub-task from the Scout and creates a precise,
-detailed execution plan for the Fixer.
+detailed execution plan for the builder pipeline.
 
 Role in the swarm: Technical planner. Research & strategy.
 Provider preference: OpenRouter (diverse model access)
@@ -21,7 +21,7 @@ logger = logging.getLogger("Architect")
 ARCHITECT_SYSTEM = """You are The Architect — a senior technical planner.
 
 Given a sub-task and context, create a precise execution plan.
-Your plan will be handed to a Fixer agent who will implement it.
+Your plan will be handed to builder agents who will implement it.
 Be specific about files, functions, line numbers when relevant.
 
 Respond ONLY with valid JSON — no preamble, no markdown:
@@ -37,7 +37,7 @@ Respond ONLY with valid JSON — no preamble, no markdown:
 
 
 class ArchitectAgent:
-    """Researches context + creates an execution plan for the Fixer."""
+    """Researches context + creates an execution plan for the builder pipeline."""
 
     def plan(self, sub_task: str, feedback: str = "",
              context: str = "", task_priority: str = "medium",

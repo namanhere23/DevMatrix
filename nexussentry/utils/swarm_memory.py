@@ -24,6 +24,9 @@ class SwarmMemory:
         
         # Sub-task history: what was done, by whom, what was the result
         self._history: List[Dict[str, Any]] = []
+
+        # Builder dispatch history: how the Architect routed work
+        self._builder_dispatch_history: List[Dict[str, Any]] = []
         
         # Key repository: useful findings (e.g. "auth configuration found at src/auth.py")
         self._facts: Dict[str, str] = {}
@@ -47,6 +50,19 @@ class SwarmMemory:
         """Get the timeline of completed tasks."""
         with self._lock:
             return list(self._history)
+
+    def record_builder_dispatch(self, task_name: str, dispatch: Dict[str, Any]):
+        """Record the Architect's builder routing decision for later stages."""
+        with self._lock:
+            self._builder_dispatch_history.append({
+                "task_name": task_name,
+                "dispatch": dict(dispatch) if dispatch else {},
+            })
+
+    def get_builder_dispatch_history(self) -> List[Dict[str, Any]]:
+        """Get the history of dispatch decisions."""
+        with self._lock:
+            return list(self._builder_dispatch_history)
 
     def record_fact(self, key: str, value: str):
         """Record an important fact discovered during execution."""
@@ -148,6 +164,17 @@ class SwarmMemory:
                 parts.append("Completed Tasks:")
                 for task in self._history:
                     parts.append(f"- Task {task['task_id']} ({task['task_name']}) -> Done")
+
+            if self._builder_dispatch_history:
+                parts.append("\nBuilder Dispatch Decisions:")
+                for item in self._builder_dispatch_history[-3:]:
+                    dispatch = item.get("dispatch", {})
+                    task_size = dispatch.get("task_size", "unknown")
+                    builder_count = dispatch.get("builder_count", "unknown")
+                    parts.append(
+                        f"- {item.get('task_name', 'Unknown task')}: "
+                        f"{task_size} task, {builder_count} builders"
+                    )
                     
             if self._modified_files:
                 parts.append("\nModified Files in this Session:")

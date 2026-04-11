@@ -107,6 +107,41 @@ class TestActionableConstraints:
         assert "Feedback 0" not in constraints
 
 
+class TestBuilderDispatchHistory:
+    """Tests for builder dispatch tracking."""
+
+    def test_record_and_read_builder_dispatch(self):
+        """Dispatch decisions should be persisted and retrievable."""
+        memory = SwarmMemory()
+        dispatch = {
+            "task_size": "large",
+            "builder_count": 5,
+            "builder_slots": 5,
+            "parallel_groups": 3,
+            "merge_strategy": "integrator_then_qa_then_critic",
+        }
+
+        memory.record_builder_dispatch("Build dashboard", dispatch)
+
+        history = memory.get_builder_dispatch_history()
+        assert len(history) == 1
+        assert history[0]["task_name"] == "Build dashboard"
+        assert history[0]["dispatch"]["task_size"] == "large"
+
+    def test_summary_includes_builder_dispatch(self):
+        """Context summaries should surface the latest dispatch decisions."""
+        memory = SwarmMemory()
+        memory.record_builder_dispatch(
+            "Build API",
+            {"task_size": "medium", "builder_count": 3}
+        )
+
+        summary = memory.summarize_context()
+        assert "Builder Dispatch Decisions" in summary
+        assert "Build API" in summary
+        assert "medium task" in summary
+
+
 class TestThreadSafety:
     """Tests for thread safety of concurrent operations."""
 

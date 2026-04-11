@@ -1,8 +1,8 @@
 # nexussentry/agents/critic.py
 """
-Agent D — The Critic
+Agent F — The Critic
 ━━━━━━━━━━━━━━━━━━━━
-Validates the Fixer's output against strict quality criteria.
+Validates execution output against strict quality criteria.
 Can approve, reject (loops back to Architect), or escalate to human.
 
 Role in the swarm: Quality gate. The ruthless reviewer.
@@ -24,7 +24,7 @@ CRITIC_SYSTEM = """You are The Critic — a senior code reviewer and security au
 You receive:
 1. The original task
 2. The plan that was made
-3. What the Fixer actually did (NOTE: execution may be SIMULATED — this is expected and acceptable)
+3. What the execution pipeline actually did (NOTE: execution may be SIMULATED — this is expected and acceptable)
 
 Evaluate the PLAN QUALITY and CODE LOGIC against these criteria:
 - Correctness: Does the plan/approach actually solve the problem?
@@ -49,7 +49,7 @@ Respond ONLY with valid JSON — no preamble, no markdown:
 
 
 class CriticAgent:
-    """Validates Fixer output. Returns approve/reject with feedback."""
+    """Validates execution output. Returns approve/reject with feedback."""
 
     def __init__(self, max_rejections: int = 2):
         self.max_rejections = max_rejections
@@ -57,7 +57,7 @@ class CriticAgent:
         self.total_reviews = 0
 
     def review(self, original_task: str, plan: dict,
-               fixer_result: dict, tracer=None) -> dict:
+               execution_result: dict, tracer=None) -> dict:
         self.total_reviews += 1
 
         if tracer:
@@ -69,8 +69,8 @@ ORIGINAL TASK: {original_task}
 PLAN THAT WAS MADE:
 {json.dumps(plan, indent=2, default=str)}
 
-WHAT FIXER DID:
-{json.dumps(fixer_result, indent=2, default=str)}
+WHAT EXECUTION PIPELINE DID:
+{json.dumps(execution_result, indent=2, default=str)}
 """
         cache = get_cache()
         provider = get_provider()

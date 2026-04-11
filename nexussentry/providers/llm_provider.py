@@ -76,7 +76,9 @@ AGENT_PREFERENCES = {
     "scout": "gemini",       # Fast decomposition
     "architect": "openrouter",  # Diverse model access
     "critic": "groq",        # Fast reasoning
-    "fixer": "auto",         # Whatever's available
+    "builder": "auto",       # Execution layer
+    "integrator": "openrouter",  # Synthesis and merge
+    "qa_verifier": "groq",   # Fast validation reasoning
     "guardian": "gemini",    # Speed for security scanning
 }
 

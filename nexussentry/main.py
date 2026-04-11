@@ -37,7 +37,9 @@ logging.basicConfig(
 
 from nexussentry.agents.scout import ScoutAgent
 from nexussentry.agents.architect import ArchitectAgent
-from nexussentry.agents.fixer import FixerAgent
+from nexussentry.agents.builder import BuilderAgent
+from nexussentry.agents.integrator import IntegratorAgent
+from nexussentry.agents.qa_verifier import QAVerifierAgent
 from nexussentry.agents.critic import CriticAgent
 from nexussentry.hitl.user_permission import UserPermissionGate
 from nexussentry.observability.tracer import AgentTracer
@@ -75,7 +77,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     Flow:
         User Goal → Guardian (security) → Scout (decompose) →
         for each sub-task (SEQUENTIAL — conflict-aware):
-            Architect (plan) → Fixer (execute) → Critic (review)
+            Architect (plan) → Builder(s) → Integrator → QA Verifier → Critic (review)
             if rejected: loop back to Architect with feedback
             if max rejections: ask user whether to retry once or return current output
     """
@@ -88,14 +90,16 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     guardian = GuardianAI()
     scout = ScoutAgent()
     architect = ArchitectAgent()
-    fixer = FixerAgent()
+    builder = BuilderAgent()
+    integrator = IntegratorAgent()
+    qa_verifier = QAVerifierAgent()
     permission_gate = UserPermissionGate()
     cache = get_cache()
     provider = get_provider()
     memory = SwarmMemory()
 
     # ── Determine execution mode from Claw bridge ──
-    exec_mode = fixer.claw.execution_mode
+    exec_mode = builder.claw.execution_mode
     exec_badge = f"[{exec_mode.upper()}]"
     print(f"  ⚡ Execution Mode: {exec_badge}")
 
@@ -159,7 +163,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     results = []
 
     # ══════════════════════════════════════════════
-    # STEPS 2-4: Architect → Fixer → Critic loop
+    # STEPS 2-5: Architect → Builder(s) → Integrator → QA → Critic loop
     # SEQUENTIAL execution — each task feeds context
     # to the next via SwarmMemory
     # ══════════════════════════════════════════════
@@ -202,6 +206,11 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 tracer=tracer
             )
 
+            memory.record_builder_dispatch(
+                task_desc,
+                plan.get("builder_dispatch", {})
+            )
+
             # ── Check for file conflicts before execution ──
             proposed_files = plan.get("files_to_modify", [])
             conflicts = memory.has_file_conflict(proposed_files)
@@ -209,27 +218,52 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 print(f"    ⚠️  File conflict detected: {', '.join(conflicts)}")
                 print(f"    ⚠️  These files were modified by a previous task. Proceeding with caution.")
 
-            # ── Step 3: Fixer executes ──
+            # ── Step 3: Builder(s) execute ──
             if slow: await asyncio.sleep(2)
-            result = await asyncio.to_thread(
-                fixer.execute,
+            builder_result = await asyncio.to_thread(
+                builder.build,
                 plan,
                 tracer
             )
 
-            # ── Step 4: Critic reviews ──
+            # ── Step 4: Integrator merges artifacts ──
+            integration_result = await asyncio.to_thread(
+                integrator.integrate,
+                plan,
+                builder_result,
+                tracer
+            )
+
+            # ── Step 5: QA Verifier checks integrated output ──
+            qa_result = await asyncio.to_thread(
+                qa_verifier.verify,
+                plan,
+                integration_result.get("generated_files", {}),
+                builder_result.get("builder_reports", []),
+                tracer,
+            )
+
+            execution_result = {
+                **builder_result,
+                **integration_result,
+                "qa_result": qa_result,
+                "output": integration_result.get("integrator_summary", ""),
+                "success": builder_result.get("success", True) and qa_result.get("passed", True),
+            }
+
+            # ── Step 6: Critic reviews ──
             if slow: await asyncio.sleep(1.5)
             verdict = await asyncio.to_thread(
                 critic.review,
                 original_task=task_desc,
                 plan=plan,
-                fixer_result=result,
+                execution_result=execution_result,
                 tracer=tracer
             )
 
             if verdict["decision"] == "approve":
                 score = verdict.get("score", "?")
-                exec_mode_tag = result.get("execution_mode", "unknown").upper()
+                exec_mode_tag = execution_result.get("execution_mode", "unknown").upper()
                 print(f"\n    ✅ Sub-task {task_id} complete! (score: {score}/100) [{exec_mode_tag}]")
                 
                 # Record to SwarmMemory
@@ -242,8 +276,8 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     "status": "done",
                     "score": score,
                     "attempts": attempt + 1,
-                    "execution_mode": result.get("execution_mode", "unknown"),
-                    "saved_to": result.get("saved_to", ""),
+                    "execution_mode": execution_result.get("execution_mode", "unknown"),
+                    "saved_to": execution_result.get("saved_to", ""),
                 })
                 break
 
@@ -275,8 +309,8 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     "task": task_desc,
                     "status": "partial_output",
                     "attempts": attempt + 1,
-                    "execution_mode": result.get("execution_mode", "unknown"),
-                    "saved_to": result.get("saved_to", ""),
+                    "execution_mode": execution_result.get("execution_mode", "unknown"),
+                    "saved_to": execution_result.get("saved_to", ""),
                 })
                 stop_requested = True
                 break
@@ -299,7 +333,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 "status": "failed",
                 "score": 0,
                 "attempts": 3,
-                "execution_mode": result.get("execution_mode", "unknown"),
+                "execution_mode": execution_result.get("execution_mode", "unknown"),
             })
 
         if stop_requested:

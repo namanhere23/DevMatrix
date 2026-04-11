@@ -32,7 +32,7 @@ class AgentTracer:
 
     AGENT_ICONS = {
         "Scout": "🔍", "Architect": "🏗️",
-        "Fixer": "🔧", "Critic": "📋",
+        "Builder": "🔨", "Integrator": "🧩", "QAVerifier": "✅", "Critic": "📋",
         "HITL": "🚨", "Guardian": "🛡️", "System": "⚙️"
     }
 
@@ -95,8 +95,8 @@ class AgentTracer:
                 tasks = data.get("sub_tasks", [])
                 self.tasks_total = len(tasks)
             elif action.endswith("_done") and agent != "System":
-                if action == "execute_done":
-                    pass  # Don't count fixer done as task done
+                if action in ("build_done", "integrate_done", "qa_done"):
+                    pass  # Task completion is still tracked at Critic approval
             elif action == "review_done":
                 if data.get("decision") == "approve":
                     self.tasks_done += 1
