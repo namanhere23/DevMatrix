@@ -39,7 +39,7 @@ from nexussentry.agents.scout import ScoutAgent
 from nexussentry.agents.architect import ArchitectAgent
 from nexussentry.agents.fixer import FixerAgent
 from nexussentry.agents.critic import CriticAgent
-from nexussentry.hitl.telegram import TelegramHITL
+from nexussentry.hitl.user_permission import UserPermissionGate
 from nexussentry.observability.tracer import AgentTracer
 from nexussentry.observability.dashboard import start_dashboard
 from nexussentry.security.guardian import GuardianAI
@@ -77,7 +77,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         for each sub-task (SEQUENTIAL — conflict-aware):
             Architect (plan) → Fixer (execute) → Critic (review)
             if rejected: loop back to Architect with feedback
-            if max rejections: escalate to Human (HITL)
+            if max rejections: ask user whether to retry once or return current output
     """
     print_banner()
     print(f"  📋 Goal: {user_goal}")
@@ -89,7 +89,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     scout = ScoutAgent()
     architect = ArchitectAgent()
     fixer = FixerAgent()
-    hitl = TelegramHITL()
+    permission_gate = UserPermissionGate()
     cache = get_cache()
     provider = get_provider()
     memory = SwarmMemory()
@@ -163,6 +163,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     # SEQUENTIAL execution — each task feeds context
     # to the next via SwarmMemory
     # ══════════════════════════════════════════════
+    stop_requested = False
     for task_obj in sub_tasks:
         task_id = task_obj.get("id", "?")
         task_desc = task_obj.get("task", "Unknown task")
@@ -245,9 +246,9 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 break
 
             elif verdict["decision"] == "escalate_to_human":
-                tracer.log("HITL", "approval_requested", {"task": task_desc})
+                tracer.log("UserPermission", "retry_requested", {"task": task_desc})
 
-                approved = await hitl.request_approval(
+                retry_approved = await permission_gate.request_retry_permission(
                     message=f"Task: {task_desc}",
                     details={
                         "issues": ", ".join(verdict.get("issues_found", [])),
@@ -255,24 +256,27 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     }
                 )
 
-                if approved:
-                    tracer.log("HITL", "human_approved", {})
-                    print(f"    ✅ Human approved sub-task {task_id}. Moving on.")
-                    results.append({
-                        "task": task_desc,
-                        "status": "human_approved",
-                        "attempts": attempt + 1,
-                        "execution_mode": result.get("execution_mode", "unknown"),
-                    })
-                else:
-                    tracer.log("HITL", "human_rejected", {})
-                    print(f"    ❌ Human rejected sub-task {task_id}. Skipping.")
-                    results.append({
-                        "task": task_desc,
-                        "status": "skipped",
-                        "attempts": attempt + 1,
-                        "execution_mode": result.get("execution_mode", "unknown"),
-                    })
+                if retry_approved and attempt < 2:
+                    tracer.log("UserPermission", "retry_approved", {})
+                    print(f"    🔁 User approved one more retry for sub-task {task_id}.")
+                    feedback = (
+                        f"User approved a retry after escalation. "
+                        f"Issues: {', '.join(verdict.get('issues_found', []))}. "
+                        f"Suggestions: {', '.join(verdict.get('suggestions', []))}"
+                    )
+                    memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
+                    continue
+
+                tracer.log("UserPermission", "retry_denied", {})
+                print(f"    ⏹️  User declined retry. Returning current results.")
+                results.append({
+                    "task": task_desc,
+                    "status": "partial_output",
+                    "attempts": attempt + 1,
+                    "execution_mode": result.get("execution_mode", "unknown"),
+                    "saved_to": result.get("saved_to", ""),
+                })
+                stop_requested = True
                 break
 
             else:
@@ -295,6 +299,9 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 "attempts": 3,
                 "execution_mode": result.get("execution_mode", "unknown"),
             })
+
+        if stop_requested:
+            break
 
     # ══════════════════════════════════════════════
     # FINAL SUMMARY
@@ -341,7 +348,13 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     print(f"  📋 Per-Task Results:")
     for r in results:
         if isinstance(r, dict):
-            status_icon = {"done": "✅", "human_approved": "👤", "skipped": "⏭️", "failed": "❌"}.get(r.get("status"), "❓")
+            status_icon = {
+                "done": "✅",
+                "partial_output": "⏹️",
+                "failed": "❌",
+                "human_approved": "👤",
+                "skipped": "⏭️",
+            }.get(r.get("status"), "❓")
             mode_tag = f"[{r.get('execution_mode', '?').upper()}]"
             score_tag = f" (score: {r['score']}/100)" if "score" in r else ""
             print(f"    {status_icon} {r['task'][:50]}... {mode_tag}{score_tag} ({r.get('attempts', '?')} attempts)")

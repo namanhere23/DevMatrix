@@ -20,11 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.30.0"]
-telegram = ["python-telegram-bot>=21.0"]
 
 all = [
     "anthropic>=0.30.0",
-    "python-telegram-bot>=21.0",
 
 ]
 dev = [

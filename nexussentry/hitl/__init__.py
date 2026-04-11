@@ -1,1 +1,1 @@
-"""HITL — Human-in-the-Loop approval layer via Telegram."""
+"""HITL — Local user permission gate for retry decisions."""

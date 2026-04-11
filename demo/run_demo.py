@@ -123,18 +123,13 @@ def run_health_check():
     except Exception as e:
         checks.append(("Claw Code (Rust)", False, str(e)))
 
-    # Check 10: Telegram HITL status (NEW — judge-grade)
+    # Check 10: User permission gate status
     try:
-        from nexussentry.hitl.telegram import TelegramHITL, TELEGRAM_AVAILABLE
-        hitl = TelegramHITL()
-        if hitl.bot:
-            checks.append(("Telegram HITL", True, "LIVE — bot connected"))
-        elif TELEGRAM_AVAILABLE:
-            checks.append(("Telegram HITL", True, "SDK installed, bot not configured"))
-        else:
-            checks.append(("Telegram HITL", True, "Console fallback (SDK not installed)"))
+        from nexussentry.hitl.user_permission import UserPermissionGate
+        gate = UserPermissionGate()
+        checks.append(("User Permission", True, gate.__class__.__name__))
     except Exception as e:
-        checks.append(("Telegram HITL", False, str(e)))
+        checks.append(("User Permission", False, str(e)))
 
     # Print results
     all_ok = True
@@ -192,20 +187,20 @@ def _print_readiness_report():
     except Exception:
         provider_mode = "UNKNOWN"
 
-    # Telegram
+    # User permission gate
     try:
-        from nexussentry.hitl.telegram import TelegramHITL
-        hitl = TelegramHITL()
-        telegram_status = "LIVE" if hitl.bot else "CONSOLE FALLBACK"
+        from nexussentry.hitl.user_permission import UserPermissionGate
+        gate = UserPermissionGate()
+        permission_status = gate.__class__.__name__
     except Exception:
-        telegram_status = "UNAVAILABLE"
+        permission_status = "UNAVAILABLE"
 
     # Dashboard
     dashboard_status = "READY"
 
     print(f"   ⚡ Execution:    {exec_mode}")
     print(f"   🤖 AI Providers: {provider_mode}")
-    print(f"   📱 Telegram:     {telegram_status}")
+    print(f"   👤 Permission:   {permission_status}")
     print(f"   🌐 Dashboard:    {dashboard_status}")
 
     # Overall badge

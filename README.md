@@ -7,6 +7,7 @@
 NexusSentry is a coordinated multi-agent system where **4 specialized AI agents** communicate like a real engineering team to solve complex, multi-step coding tasks — with human oversight, security scanning, and real-time observability.
 
 **v2.5 — Hackathon-Ready Edition**
+
 - 🧠 **Swarm Memory**: Agents now share thread-safe context across sub-tasks
 - ⚡ **Parallel Execution**: Sub-tasks are executed concurrently using `asyncio.gather`
 - 🖥️ **Enhanced Dashboard**: Real-time observability with provider analytics and interactive Critic score trends
@@ -18,14 +19,14 @@ NexusSentry is a coordinated multi-agent system where **4 specialized AI agents*
 
 Instead of asking one AI to do everything (and getting mediocre results), NexusSentry runs a **hive mind** of specialized agents:
 
-| Agent | Role | What It Does | Default Provider |
-|-------|------|-------------|-----------------|
-| 🔍 **Scout** | Task Decomposer | Breaks a high-level goal into 3-5 actionable sub-tasks | 💎 Gemini |
-| 🏗️ **Architect** | Technical Planner | Creates a precise execution plan for each sub-task | 🌐 OpenRouter |
-| 🔧 **Fixer** | Executor | Runs the plan in a Rust-sandboxed environment (Claw Code) | Auto |
-| 📋 **Critic** | Quality Gate | Reviews output — approves, rejects (with feedback loop), or escalates | 🧠 Grok |
-| 🛡️ **Guardian** | Security Scanner | 7-layer threat detection (prompt injection, PII, XSS, etc.) | 💎 Gemini |
-| 🚨 **HITL** | Human Approval | Sends Telegram notifications for risky operations | — |
+| Agent                  | Role              | What It Does                                                          | Default Provider |
+| ---------------------- | ----------------- | --------------------------------------------------------------------- | ---------------- |
+| 🔍 **Scout**           | Task Decomposer   | Breaks a high-level goal into 3-5 actionable sub-tasks                | 💎 Gemini        |
+| 🏗️ **Architect**       | Technical Planner | Creates a precise execution plan for each sub-task                    | 🌐 OpenRouter    |
+| 🔧 **Fixer**           | Executor          | Runs the plan in a Rust-sandboxed environment (Claw Code)             | Auto             |
+| 📋 **Critic**          | Quality Gate      | Reviews output — approves, rejects (with feedback loop), or escalates | 🧠 Grok          |
+| 🛡️ **Guardian**        | Security Scanner  | 7-layer threat detection (prompt injection, PII, XSS, etc.)           | 💎 Gemini        |
+| 👤 **User Permission** | Retry Gate        | Asks user whether to retry once or return current output              | —                |
 
 ### The Key Innovation: **Self-Correcting Feedback Loop**
 
@@ -51,38 +52,38 @@ If a provider is down, the system automatically falls through to the next availa
 
 ```mermaid
 graph TB
-    User["👤 User<br/>(Telegram / CLI)"]
-    
+    User["👤 User<br/>(CLI / App)"]
+
     subgraph ProviderLayer["🤖 Multi-Provider AI Layer"]
         Gemini["💎 Gemini"]
         Grok["🧠 Grok"]
         OpenRouter["🌐 OpenRouter"]
         Anthropic["🤖 Anthropic"]
     end
-    
+
     subgraph SecurityLayer["🛡️ Security Layer"]
         Guardian["GuardianAI<br/>7-Layer Scanner"]
     end
-    
+
     subgraph AgentSwarm["🧠 Agent Swarm"]
         Scout["🔍 Scout<br/>Task Decomposer"]
         Architect["🏗️ Architect<br/>Technical Planner"]
         Fixer["🔧 Fixer<br/>Executor"]
         Critic["📋 Critic<br/>Quality Gate"]
     end
-    
+
     subgraph ExecutionLayer["🦀 Execution Layer"]
         ClawBridge["Claw Bridge<br/>Python ↔ Rust"]
         RustSandbox["Rust Sandbox<br/>Safe Execution"]
     end
-    
+
     subgraph Observability["📊 Observability"]
         Tracer["Agent Tracer<br/>JSONL Logs"]
         Dashboard["Web Dashboard<br/>Real-Time UI"]
     end
-    
-    HITL["🚨 HITL<br/>Telegram Bot"]
-    
+
+    Permission["👤 User Permission<br/>Retry or Return"]
+
     User -->|"goal"| Guardian
     Guardian -->|"safe ✅"| Scout
     Guardian -->|"blocked 🚫"| User
@@ -94,20 +95,20 @@ graph TB
     Fixer -->|"output"| Critic
     Critic -->|"approve ✅"| User
     Critic -->|"reject ❌"| Architect
-    Critic -->|"escalate 🚨"| HITL
-    HITL -->|"decision"| User
-    
+    Critic -->|"needs decision"| Permission
+    Permission -->|"decision"| User
+
     Scout -.->|"LLM call"| ProviderLayer
     Architect -.->|"LLM call"| ProviderLayer
     Critic -.->|"LLM call"| ProviderLayer
     Guardian -.->|"LLM call"| ProviderLayer
-    
+
     Scout -.->|"events"| Tracer
     Architect -.->|"events"| Tracer
     Fixer -.->|"events"| Tracer
     Critic -.->|"events"| Tracer
     Tracer -.->|"polls"| Dashboard
-    
+
     style ProviderLayer fill:#1a1030,stroke:#a855f7,stroke-width:2px
     style SecurityLayer fill:#0d2818,stroke:#10b981,stroke-width:2px
     style AgentSwarm fill:#1a1040,stroke:#6366f1,stroke-width:2px
@@ -129,21 +130,21 @@ sequenceDiagram
     participant F as 🔧 Fixer
     participant R as 🦀 Rust Sandbox
     participant C as 📋 Critic
-    participant H as 🚨 HITL
-    
+    participant H as 👤 User Permission
+
     U->>G: Submit goal
     G->>G: 7-layer security scan
-    
+
     alt Threat detected
         G-->>U: 🚫 Blocked (reason)
     else Safe
         G->>S: Pass goal
     end
-    
+
     S->>P: Decompose (via Gemini)
     P-->>S: Sub-tasks JSON
     S->>A: Sub-task 1
-    
+
     loop Max 3 attempts
         A->>P: Plan (via OpenRouter)
         P-->>A: Execution plan
@@ -153,7 +154,7 @@ sequenceDiagram
         F->>C: Submit for review
         C->>P: Review (via Grok)
         P-->>C: Verdict
-        
+
         alt Score ≥ 85
             C-->>U: ✅ Approved
         else Score < 70
@@ -181,9 +182,9 @@ graph LR
     L6["Layer 6<br/>LLM Analysis<br/>(Gemini semantic)"]
     L7["Layer 7<br/>Rate Limiting<br/>(30 req/min)"]
     Safe["✅ Safe"]
-    
+
     Input --> L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> Safe
-    
+
     L1 -.->|"🚫"| Block["Blocked"]
     L2 -.->|"🚫"| Block
     L3 -.->|"🚫"| Block
@@ -191,7 +192,7 @@ graph LR
     L5 -.->|"🚫"| Block
     L6 -.->|"🚫"| Block
     L7 -.->|"🚫"| Block
-    
+
     style L1 fill:#1a0a0a,stroke:#ef4444
     style L2 fill:#1a0a0a,stroke:#ef4444
     style L3 fill:#1a0a0a,stroke:#ef4444
@@ -216,15 +217,15 @@ graph TB
         Guardian["🛡️ Guardian"]
         Fixer["🔧 Fixer"]
     end
-    
+
     Provider["🔀 LLM Provider<br/>Auto-Router"]
-    
+
     Scout -->|"prefer: gemini"| Provider
     Architect -->|"prefer: openrouter"| Provider
     Critic -->|"prefer: grok"| Provider
     Guardian -->|"prefer: gemini"| Provider
     Fixer -->|"prefer: auto"| Provider
-    
+
     subgraph Backends["Available Backends"]
         G["💎 Gemini<br/>gemini-2.0-flash"]
         K["🧠 Grok<br/>grok-3-mini-fast"]
@@ -232,13 +233,13 @@ graph TB
         A["🤖 Anthropic<br/>claude-sonnet"]
         M["🎭 Mock<br/>Demo Mode"]
     end
-    
+
     Provider -->|"priority 1"| G
     Provider -->|"priority 2"| K
     Provider -->|"priority 3"| O
     Provider -->|"priority 4"| A
     Provider -->|"no keys"| M
-    
+
     style Agents fill:#1a1040,stroke:#6366f1,stroke-width:2px
     style Backends fill:#0d1a2d,stroke:#06b6d4,stroke-width:2px
     style Provider fill:#2d1030,stroke:#a855f7,stroke-width:2px
@@ -252,7 +253,7 @@ graph TB
 
 - Python 3.11+
 - **At least ONE** LLM API key (Gemini recommended — free tier available)
-- (Optional) Telegram bot token from [@BotFather](https://t.me/BotFather)
+- No external bot token is required for retry decisions.
 
 ### Setup
 
@@ -278,12 +279,12 @@ cp .env.example .env
 
 ### API Keys (You Only Need ONE!)
 
-| Provider | Get Key | Cost |
-|----------|---------|------|
-| 💎 **Gemini** (Recommended) | [Google AI Studio](https://aistudio.google.com/apikey) | Free tier |
-| 🧠 **Grok** | [xAI Console](https://console.x.ai/) | Free credits |
-| 🌐 **OpenRouter** | [openrouter.ai](https://openrouter.ai/keys) | Pay-per-use |
-| 🤖 **Anthropic** | [console.anthropic.com](https://console.anthropic.com/) | Pay-per-use |
+| Provider                    | Get Key                                                 | Cost         |
+| --------------------------- | ------------------------------------------------------- | ------------ |
+| 💎 **Gemini** (Recommended) | [Google AI Studio](https://aistudio.google.com/apikey)  | Free tier    |
+| 🧠 **Grok**                 | [xAI Console](https://console.x.ai/)                    | Free credits |
+| 🌐 **OpenRouter**           | [openrouter.ai](https://openrouter.ai/keys)             | Pay-per-use  |
+| 🤖 **Anthropic**            | [console.anthropic.com](https://console.anthropic.com/) | Pay-per-use  |
 
 ### Run
 
@@ -310,6 +311,7 @@ When the swarm starts, a real-time dashboard automatically opens at:
 ```
 
 Features:
+
 - Live agent activity feed
 - Task progress bar
 - Approval/rejection counters
@@ -338,7 +340,7 @@ DevMatrix/
 │   │   ├── fixer.py             # 🔧 Code execution (→ Auto)
 │   │   └── critic.py            # 📋 Quality review (→ Grok)
 │   ├── hitl/
-│   │   └── telegram.py          # 🚨 Human-in-the-loop
+│   │   └── user_permission.py   # 👤 Local user retry/return gate
 │   ├── observability/
 │   │   ├── tracer.py            # 📊 Event logging + provider tracking
 │   │   ├── dashboard.py         # 🌐 HTTP dashboard server
@@ -380,7 +382,7 @@ docker run --env-file .env -p 7777:7777 nexussentry
 3. **7-Layer Security** — Regex + LLM scanning, works fully offline (layers 1-5 need no API)
 4. **Response Caching** — MD5-keyed disk cache prevents demo failures from API outages
 5. **Real-Time Dashboard** — Zero-dependency HTTP server with glassmorphism UI
-6. **Human-in-the-Loop** — Telegram bot integration for risky operation approval
+6. **User Permission Gate** — local y/n decision for retry or returning current output
 7. **Rust Sandbox Bridge** — Python orchestrates, Rust executes (via Claw Code)
 8. **Graceful Degradation** — Every component has fallback behavior; nothing crashes
 9. **Mock Mode** — Full demo works even with zero API keys configured
@@ -389,8 +391,8 @@ docker run --env-file .env -p 7777:7777 nexussentry
 
 ## 📊 Demo Metrics (What to Say to Judges)
 
-> "4 specialized agents. 4 AI providers. 12+ tool calls. 7 security gate layers. 
->  1 human approval. 0 data leaked. Under 90 seconds."
+> "4 specialized agents. 4 AI providers. 12+ tool calls. 7 security gate layers.
+> 1 human approval. 0 data leaked. Under 90 seconds."
 
 ---
 

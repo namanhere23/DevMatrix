@@ -1,7 +1,7 @@
 """
 Integration tests for the orchestrator's core flows:
   - reject → retry → approve loop
-  - max-rejections → HITL escalation
+    - max-rejections → user-decision escalation path
   - sequential execution order
 """
 

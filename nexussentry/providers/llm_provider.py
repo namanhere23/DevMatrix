@@ -48,7 +48,7 @@ PROVIDER_CONFIG = {
     "groq": {
         "env_key": "GROQ_API_KEY",
         "base_url": "https://api.groq.com/openai/v1",
-        "default_model": "llama-3.3-70b-versatile",
+        "default_model": "groq/compound",
         "label": "Groq",
         "icon": "🧠",
     },
