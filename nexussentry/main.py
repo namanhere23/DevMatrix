@@ -16,8 +16,10 @@ import asyncio
 import os
 import sys
 import logging
-from typing import Any
+from typing import Any, TypedDict
 from dotenv import load_dotenv
+
+from langgraph.graph import StateGraph, START, END
 
 # Fix Windows console encoding — must be before any emoji output
 if sys.platform == "win32":
@@ -49,6 +51,20 @@ from nexussentry.security.guardian import GuardianAI
 from nexussentry.utils.response_cache import get_cache
 from nexussentry.providers.llm_provider import get_provider
 from nexussentry.utils.swarm_memory import SwarmMemory
+
+
+class SwarmState(TypedDict, total=False):
+    user_goal: str
+    slow: bool
+    blocked: bool
+    security_result: dict[str, Any]
+    decomposition: dict[str, Any]
+    sub_tasks: list[dict[str, Any]]
+    pending_tasks: list[dict[str, Any]]
+    completed_ids: list[int]
+    failed_ids: list[int]
+    results: list[dict[str, Any]]
+    stop_requested: bool
 
 
 def print_banner():
@@ -128,31 +144,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         "mock_mode": provider.mock_mode,
         "execution_mode": exec_mode,
     })
-
-    # ══════════════════════════════════════════════
-    # STEP 0: Security Scan (Guardian — 7 layers)
-    # ══════════════════════════════════════════════
-    print(f"\n  🛡️  Running 7-layer security scan...")
-    scan_result = guardian.scan(user_goal, tracer)
-    if not scan_result.get("safe", True):
-        print(f"\n  🚨 BLOCKED by Guardian (Layer {scan_result.get('layer', '?')})")
-        print(f"     Reason: {scan_result.get('reason', 'Unknown')}")
-        print(f"\n  {'═' * 56}")
-        print(f"  🛡️  0 data leaked. Threat neutralized.\n")
-        tracer.mark_complete()
-        return []
-
-    print(f"  ✅ Security scan passed (all 7 layers clear)\n")
-
-    # ══════════════════════════════════════════════
-    # STEP 1: Scout decomposes the goal
-    # ══════════════════════════════════════════════
-    if slow: await asyncio.sleep(2)
-    context = memory.summarize_context()
-    scout_input = user_goal if not context else f"{user_goal}\n\nContext:\n{context}"
-    decomposition = scout.decompose(scout_input, tracer)
-    raw_sub_tasks = decomposition.get("sub_tasks", [])
-
     def _normalize_sub_tasks(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Normalize IDs/dependencies so orchestration can safely schedule tasks."""
         normalized: list[dict[str, Any]] = []
@@ -187,32 +178,13 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 "depends_on": sorted(set(dep_ids)),
             })
 
-        valid_ids = {t["id"] for t in normalized}
+        valid_ids = {task["id"] for task in normalized}
         for task in normalized:
             task["depends_on"] = [dep for dep in task.get("depends_on", []) if dep in valid_ids]
 
         return normalized
 
-    sub_tasks = _normalize_sub_tasks(raw_sub_tasks)
-
-    if not sub_tasks:
-        print("  ⚠️  Scout returned no sub-tasks. Aborting.")
-        tracer.mark_complete()
-        return []
-
-    # Record Scout discoveries as facts
-    memory.record_fact("goal_summary", decomposition.get("goal_summary", user_goal))
-    memory.record_fact("complexity", decomposition.get("estimated_complexity", "unknown"))
-
-    results = []
-
-    # ══════════════════════════════════════════════
-    # STEPS 2-6: Dependency-based parallel execution waves
-    # Architect → Builder(s) → Integrator → QA (strict fail) → Critic
-    # ══════════════════════════════════════════════
-    stop_requested = False
-
-    async def _execute_sub_task(task_obj: dict[str, Any]) -> dict[str, Any]:
+    async def _execute_sub_task(task_obj: dict[str, Any], decomposition: dict[str, Any]) -> dict[str, Any]:
         task_id = task_obj.get("id", "?")
         task_desc = task_obj.get("task", "Unknown task")
         priority = task_obj.get("priority", "medium").upper()
@@ -220,7 +192,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
 
         print(f"\n  {'─' * 56}")
         dep_label = f" deps={dependencies}" if dependencies else " deps=[]"
-        print(f"  📌 Sub-task {task_id}/{len(sub_tasks)} [{priority}]{dep_label}: {task_desc}")
+        print(f"  📌 Sub-task {task_id}/{len(decomposition.get('sub_tasks', []))} [{priority}]{dep_label}: {task_desc}")
 
         feedback = ""
         critic = CriticAgent(max_rejections=2)
@@ -246,12 +218,12 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 context=plan_context,
                 task_priority=priority,
                 estimated_complexity=decomposition.get("estimated_complexity", "medium"),
-                tracer=tracer
+                tracer=tracer,
             )
 
             memory.record_builder_dispatch(
                 task_desc,
-                plan.get("builder_dispatch", {})
+                plan.get("builder_dispatch", {}),
             )
 
             proposed_files = plan.get("files_to_modify", [])
@@ -265,14 +237,14 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
             builder_result = await asyncio.to_thread(
                 builder.build,
                 plan,
-                tracer
+                tracer,
             )
 
             integration_result = await asyncio.to_thread(
                 integrator.integrate,
                 plan,
                 builder_result,
-                tracer
+                tracer,
             )
 
             qa_result = await asyncio.to_thread(
@@ -291,7 +263,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 "success": builder_result.get("success", True) and qa_result.get("passed", True),
             }
 
-            # Strict QA gate: Critic runs only if QA passes.
             if not qa_result.get("passed", False):
                 qa_issues = qa_result.get("issues_found", [])
                 qa_suggestions = qa_result.get("suggestions", [])
@@ -321,7 +292,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 original_task=task_desc,
                 plan=plan,
                 execution_result=execution_result,
-                tracer=tracer
+                tracer=tracer,
             )
 
             if verdict["decision"] == "approve":
@@ -350,7 +321,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     details={
                         "issues": ", ".join(verdict.get("issues_found", [])),
                         "score": str(verdict.get("score", "?")),
-                    }
+                    },
                 )
 
                 if retry_approved and attempt < 2:
@@ -396,15 +367,68 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
             "saved_to": execution_result.get("saved_to", ""),
         }
 
-    pending = {task["id"]: task for task in sub_tasks}
-    completed_ids: set[int] = set()
-    failed_ids: set[int] = set()
+    async def security_scan_node(state: SwarmState) -> dict[str, Any]:
+        print(f"\n  🛡️  Running 7-layer security scan...")
+        scan_result = guardian.scan(user_goal, tracer)
+        if not scan_result.get("safe", True):
+            print(f"\n  🚨 BLOCKED by Guardian (Layer {scan_result.get('layer', '?')})")
+            print(f"     Reason: {scan_result.get('reason', 'Unknown')}")
+            print(f"\n  {'═' * 56}")
+            print(f"  🛡️  0 data leaked. Threat neutralized.\n")
+            return {"security_result": scan_result, "blocked": True, "results": []}
 
-    while pending and not stop_requested:
+        print(f"  ✅ Security scan passed (all 7 layers clear)\n")
+        return {"security_result": scan_result, "blocked": False}
+
+    async def scout_node(state: SwarmState) -> dict[str, Any]:
+        if slow:
+            await asyncio.sleep(2)
+
+        context = memory.summarize_context()
+        scout_input = user_goal if not context else f"{user_goal}\n\nContext:\n{context}"
+        decomposition = scout.decompose(scout_input, tracer)
+        sub_tasks = _normalize_sub_tasks(decomposition.get("sub_tasks", []))
+
+        if not sub_tasks:
+            print("  ⚠️  Scout returned no sub-tasks. Aborting.")
+            return {
+                "decomposition": decomposition,
+                "sub_tasks": [],
+                "pending_tasks": [],
+                "completed_ids": [],
+                "failed_ids": [],
+                "results": [],
+                "stop_requested": True,
+            }
+
+        memory.record_fact("goal_summary", decomposition.get("goal_summary", user_goal))
+        memory.record_fact("complexity", decomposition.get("estimated_complexity", "unknown"))
+
+        return {
+            "decomposition": decomposition,
+            "sub_tasks": sub_tasks,
+            "pending_tasks": sub_tasks,
+            "completed_ids": [],
+            "failed_ids": [],
+            "results": [],
+            "stop_requested": False,
+        }
+
+    async def execute_wave_node(state: SwarmState) -> dict[str, Any]:
+        if state.get("blocked") or state.get("stop_requested"):
+            return {}
+
+        decomposition = state.get("decomposition", {})
+        pending = list(state.get("pending_tasks", []))
+        completed_ids = set(state.get("completed_ids", []))
+        failed_ids = set(state.get("failed_ids", []))
+        results = list(state.get("results", []))
+
         blocked_ids = []
-        for task_id, task_obj in list(pending.items()):
+        for task_obj in list(pending):
             deps = task_obj.get("depends_on", [])
             if any(dep in failed_ids for dep in deps):
+                task_id = task_obj.get("id")
                 blocked_ids.append(task_id)
                 results.append({
                     "task_id": task_id,
@@ -422,23 +446,28 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 )
                 failed_ids.add(task_id)
 
-        for task_id in blocked_ids:
-            pending.pop(task_id, None)
-
+        pending = [task for task in pending if task.get("id") not in blocked_ids]
         if not pending:
-            break
+            return {
+                "pending_tasks": [],
+                "completed_ids": sorted(completed_ids),
+                "failed_ids": sorted(failed_ids),
+                "results": results,
+                "stop_requested": state.get("stop_requested", False),
+            }
 
         ready_tasks = [
             task_obj
-            for task_obj in pending.values()
+            for task_obj in pending
             if all(dep in completed_ids for dep in task_obj.get("depends_on", []))
         ]
 
         if not ready_tasks:
             print("\n  ⚠️  No dependency-ready tasks remain; possible dependency cycle.")
-            for task_id, task_obj in list(pending.items()):
+            for task_id, task_obj in list(enumerate(pending)):
+                task_id_value = task_obj.get("id", task_id)
                 results.append({
-                    "task_id": task_id,
+                    "task_id": task_id_value,
                     "task": task_obj.get("task", "Unknown task"),
                     "status": "skipped",
                     "attempts": 0,
@@ -451,17 +480,24 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     score=0,
                     attempts=0,
                 )
-                pending.pop(task_id, None)
-            break
+            return {
+                "pending_tasks": [],
+                "completed_ids": sorted(completed_ids),
+                "failed_ids": sorted(failed_ids),
+                "results": results,
+                "stop_requested": state.get("stop_requested", False),
+            }
 
         ready_ids = [task.get("id") for task in ready_tasks]
         print(f"\n  🚀 Executing dependency-ready wave in parallel: {ready_ids}")
-        wave_results = await asyncio.gather(*[_execute_sub_task(task_obj) for task_obj in ready_tasks])
+        wave_results = await asyncio.gather(
+            *[_execute_sub_task(task_obj, decomposition) for task_obj in ready_tasks]
+        )
 
         for task_result in wave_results:
             task_id = task_result.get("task_id")
             status = task_result.get("status", "failed")
-            pending.pop(task_id, None)
+            pending = [task for task in pending if task.get("id") != task_id]
             results.append(task_result)
 
             tracer.record_task_status(
@@ -478,70 +514,133 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 failed_ids.add(task_id)
 
             if task_result.get("stop_requested"):
-                stop_requested = True
+                state["stop_requested"] = True
 
-    # ══════════════════════════════════════════════
-    # FINAL SUMMARY
-    # ══════════════════════════════════════════════
-    tracer.mark_complete()
-    summary = tracer.summary()
-    cache_stats = cache.stats()
-    security_stats = guardian.stats()
-    provider_stats = provider.stats()
+        return {
+            "pending_tasks": pending,
+            "completed_ids": sorted(completed_ids),
+            "failed_ids": sorted(failed_ids),
+            "results": results,
+            "stop_requested": state.get("stop_requested", False),
+        }
 
-    # Determine overall execution mode badge
-    exec_modes_used = list({r.get("execution_mode", "unknown") for r in results if isinstance(r, dict)})
-    overall_mode = exec_modes_used[0].upper() if len(exec_modes_used) == 1 else "MIXED"
+    def route_after_security(state: SwarmState) -> str:
+        return "finalize" if state.get("blocked") else "scout"
 
-    print(f"\n  {'═' * 56}")
-    print(f"  🏁 NexusSentry Swarm Complete! [{overall_mode}]")
-    print(f"  {'─' * 56}")
-    print(f"   ⏱️  Total time:     {summary['total_time_s']}s")
-    print(f"   📊 Total events:   {summary['total_events']}")
-    print(f"   🤖 Agents used:    {', '.join(summary['agents_used'])}")
-    print(f"   ✅ Approvals:      {summary['approvals']}")
-    print(f"   ❌ Rejections:     {summary['rejections']}")
-    print(f"   🛡️  Security scans: {security_stats['scans_performed']}")
-    print(f"   💾 Cache hit rate: {cache_stats['hit_rate']}")
-    print(f"   🤖 LLM calls:     {provider_stats['total_calls']}")
-    print(f"   🔀 Providers used: {provider_stats['provider_usage']}")
-    print(f"   ⚡ Execution mode: {overall_mode}")
-    print(f"   📁 Trace log:      {summary['log_file']}")
+    def route_after_scout(state: SwarmState) -> str:
+        return "finalize" if not state.get("sub_tasks") else "execute_wave"
 
-    # Show output directory if files were saved
-    output_dirs = set()
-    for r in results:
-        if isinstance(r, dict) and r.get("saved_to"):
-            output_dirs.add(r["saved_to"])
-    if output_dirs:
-        print(f"   📂 Output saved:   {', '.join(output_dirs)}")
-    else:
-        output_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
-        if os.path.exists(output_path):
-            print(f"   📂 Output dir:     {output_path}")
+    def route_after_wave(state: SwarmState) -> str:
+        if state.get("stop_requested") or not state.get("pending_tasks"):
+            return "finalize"
+        return "execute_wave"
 
-    # Per-task status breakdown
-    print(f"  {'─' * 56}")
-    print(f"  📋 Per-Task Results:")
-    for r in results:
-        if isinstance(r, dict):
-            status_icon = {
-                "done": "✅",
-                "partial_output": "⏹️",
-                "failed": "❌",
-                "human_approved": "👤",
-                "skipped": "⏭️",
-            }.get(r.get("status"), "❓")
-            mode_tag = f"[{r.get('execution_mode', '?').upper()}]"
-            score_tag = f" (score: {r['score']}/100)" if "score" in r else ""
-            print(f"    {status_icon} {r['task'][:50]}... {mode_tag}{score_tag} ({r.get('attempts', '?')} attempts)")
-            if r.get("saved_to"):
-                print(f"       💾 Files → {r['saved_to']}")
+    async def finalize_node(state: SwarmState) -> dict[str, Any]:
+        results = list(state.get("results", []))
 
-    print(f"  {'═' * 56}")
-    print(f"\n  \033[95m✨ Python for the Brain. Rust for the Blade. ✨\033[0m\n")
+        tracer.mark_complete()
+        summary = tracer.summary()
+        cache_stats = cache.stats()
+        security_stats = guardian.stats()
+        provider_stats = provider.stats()
 
-    return results
+        exec_modes_used = list({r.get("execution_mode", "unknown") for r in results if isinstance(r, dict)})
+        overall_mode = exec_modes_used[0].upper() if len(exec_modes_used) == 1 else "MIXED"
+
+        print(f"\n  {'═' * 56}")
+        print(f"  🏁 NexusSentry Swarm Complete! [{overall_mode}]")
+        print(f"  {'─' * 56}")
+        print(f"    Total time:     {summary['total_time_s']}s")
+        print(f"    Total events:   {summary['total_events']}")
+        print(f"    Agents used:    {', '.join(summary['agents_used'])}")
+        print(f"    Approvals:      {summary['approvals']}")
+        print(f"    Rejections:     {summary['rejections']}")
+        print(f"    Security scans: {security_stats['scans_performed']}")
+        print(f"    Cache hit rate: {cache_stats['hit_rate']}")
+        print(f"    LLM calls:     {provider_stats['total_calls']}")
+        print(f"    Providers used: {provider_stats['provider_usage']}")
+        print(f"    Execution mode: {overall_mode}")
+        print(f"    Trace log:      {summary['log_file']}")
+
+        output_dirs = set()
+        for r in results:
+            if isinstance(r, dict) and r.get("saved_to"):
+                output_dirs.add(r["saved_to"])
+        if output_dirs:
+            print(f"   📂 Output saved:   {', '.join(output_dirs)}")
+        else:
+            output_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+            if os.path.exists(output_path):
+                print(f"   📂 Output dir:     {output_path}")
+
+        print(f"  {'─' * 56}")
+        print(f"  📋 Per-Task Results:")
+        for r in results:
+            if isinstance(r, dict):
+                status_icon = {
+                    "done": "✅",
+                    "partial_output": "⏹️",
+                    "failed": "❌",
+                    "human_approved": "👤",
+                    "skipped": "⏭️",
+                }.get(r.get("status"), "❓")
+                mode_tag = f"[{r.get('execution_mode', '?').upper()}]"
+                score_tag = f" (score: {r['score']}/100)" if "score" in r else ""
+                print(f"    {status_icon} {r['task'][:50]}... {mode_tag}{score_tag} ({r.get('attempts', '?')} attempts)")
+                if r.get("saved_to"):
+                    print(f"       💾 Files → {r['saved_to']}")
+
+        print(f"  {'═' * 56}")
+        print(f"\n  \033[95m✨ Python for the Brain. Rust for the Blade. ✨\033[0m\n")
+
+        return {"results": results}
+
+    graph = StateGraph(SwarmState)
+    graph.add_node("security_scan", security_scan_node)
+    graph.add_node("scout", scout_node)
+    graph.add_node("execute_wave", execute_wave_node)
+    graph.add_node("finalize", finalize_node)
+
+    graph.add_edge(START, "security_scan")
+    graph.add_conditional_edges(
+        "security_scan",
+        route_after_security,
+        {
+            "scout": "scout",
+            "finalize": "finalize",
+        },
+    )
+    graph.add_conditional_edges(
+        "scout",
+        route_after_scout,
+        {
+            "execute_wave": "execute_wave",
+            "finalize": "finalize",
+        },
+    )
+    graph.add_conditional_edges(
+        "execute_wave",
+        route_after_wave,
+        {
+            "execute_wave": "execute_wave",
+            "finalize": "finalize",
+        },
+    )
+    graph.add_edge("finalize", END)
+
+    compiled_graph = graph.compile()
+    final_state = await compiled_graph.ainvoke({
+        "user_goal": user_goal,
+        "slow": slow,
+        "blocked": False,
+        "results": [],
+        "pending_tasks": [],
+        "completed_ids": [],
+        "failed_ids": [],
+        "stop_requested": False,
+    })
+
+    return final_state.get("results", [])
 
 
 if __name__ == "__main__":
