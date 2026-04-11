@@ -6,7 +6,9 @@ Validates integrated artifacts before they reach the Critic.
 
 import json
 import logging
-import re
+
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
 
 from nexussentry.providers.llm_provider import get_provider
 
@@ -46,19 +48,24 @@ class QAVerifierAgent:
             if "todo" in lowered or "add code here" in lowered:
                 issues.append(f"{filename} still contains placeholder text")
 
-        prompt = f"""Plan summary: {plan.get('plan_summary', '')}
-Generated files: {', '.join(sorted(generated_files.keys()))}
-Missing files: {', '.join(missing_files) if missing_files else 'none'}
-Builder count: {len(builder_reports)}
+        prompt = self._format_prompt("""Plan summary: {plan_summary}
+    Generated files: {generated_files}
+    Missing files: {missing_files}
+    Builder count: {builder_count}
 
-Return a strict JSON QA verdict."""
+    Return a strict JSON QA verdict.""",
+            plan_summary=plan.get('plan_summary', ''),
+            generated_files=', '.join(sorted(generated_files.keys())),
+            missing_files=', '.join(missing_files) if missing_files else 'none',
+            builder_count=len(builder_reports),
+        )
 
         try:
             raw = provider.chat(
                 system=QA_SYSTEM,
                 user_msg=prompt,
                 max_tokens=800,
-                prefer="huggingface",
+                prefer="auto",
                 agent_name="qa_verifier",
             )
             qa_verdict = self._parse_json_response(raw)
@@ -93,30 +100,11 @@ Return a strict JSON QA verdict."""
 
         return result
 
+    def _format_prompt(self, template: str, **kwargs) -> str:
+        return PromptTemplate.from_template(template).format(**kwargs)
+
     def _parse_json_response(self, text: str) -> dict:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
-        return {
-            "decision": "fail",
-            "score": 0,
-            "issues_found": ["Could not parse QA response as JSON"],
-            "suggestions": ["Review generated files manually"],
-            "summary": text[:200],
-        }
+        parsed = JsonOutputParser().parse(text)
+        if isinstance(parsed, dict):
+            return parsed
+        raise ValueError(f"Could not parse QA response as JSON: {text[:200]}")

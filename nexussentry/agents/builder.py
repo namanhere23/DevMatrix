@@ -7,10 +7,14 @@ Role in the swarm: Parallel implementation layer.
 Provider preference: auto (with Hugging Face prompts for code generation).
 """
 
-import json
 import logging
+import ast
 import re
+import json
 from pathlib import Path
+
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
 
 from nexussentry.adapters.claw_bridge import ClawBridge
 from nexussentry.providers.llm_provider import get_provider
@@ -80,20 +84,26 @@ class BuilderAgent:
         reports = []
         for idx, group in enumerate(file_groups, start=1):
             builder_name = f"builder-{idx}"
-            prompt = f"""Builder role: {builder_name}
-Assigned files: {', '.join(group)}
-Plan summary: {plan.get('plan_summary', '')}
-Approach: {plan.get('approach', '')}
-Overall files in task: {', '.join(files_to_modify)}
+            prompt = self._format_prompt("""Builder role: {builder_name}
+Assigned files: {assigned_files}
+Plan summary: {plan_summary}
+Approach: {approach}
+Overall files in task: {all_files}
 
 You must only work on the assigned files. Return strict JSON with builder_name,
-output, generated_files, files_modified, commands_run, and errors."""
+output, generated_files, files_modified, commands_run, and errors.""",
+                builder_name=builder_name,
+                assigned_files=', '.join(group),
+                plan_summary=plan.get('plan_summary', ''),
+                approach=plan.get('approach', ''),
+                all_files=', '.join(files_to_modify),
+            )
 
             raw = provider.chat(
                 system=BUILDER_SYSTEM,
                 user_msg=prompt,
                 max_tokens=3000,
-                prefer="huggingface",
+                prefer="auto",
                 agent_name="builder",
             )
             report = self._parse_json_response(raw)
@@ -176,28 +186,31 @@ output, generated_files, files_modified, commands_run, and errors."""
             ext = Path(safe_name).suffix.lower()
             file_type_hints = self._get_file_type_hints(ext)
 
-            prompt = f"""Generate the COMPLETE, WORKING source code for: {safe_name}
+            prompt = self._format_prompt("""Generate the COMPLETE, WORKING source code for: {safe_name}
 
 PLAN: {plan_summary}
 APPROACH: {approach}
-ALL FILES: {', '.join(files_to_modify)}
+ALL FILES: {all_files}
 
 {file_type_hints}
 
-Return only raw source code."""
+Return only raw source code.""",
+                safe_name=safe_name,
+                plan_summary=plan_summary,
+                approach=approach,
+                all_files=', '.join(files_to_modify),
+                file_type_hints=file_type_hints,
+            )
 
-            try:
-                raw_code = provider.chat(
-                    system=CODE_GEN_SYSTEM,
-                    user_msg=prompt,
-                    max_tokens=4000,
-                    agent_name="builder",
-                )
-                code = self._clean_code_response(raw_code)
-                if code and len(code.strip()) > 20:
-                    generated_files[safe_name] = code
-            except Exception as exc:
-                logger.warning("Code generation failed for %s: %s", safe_name, exc)
+            raw_code = provider.chat(
+                system=CODE_GEN_SYSTEM,
+                user_msg=prompt,
+                max_tokens=4000,
+                agent_name="builder",
+            )
+            code = self._clean_code_response(raw_code)
+            if code and len(code.strip()) > 20:
+                generated_files[safe_name] = code
 
         return generated_files
 
@@ -226,24 +239,32 @@ Return only raw source code."""
             code = "\n".join(lines[1:-1])
         return code.strip()
 
+    def _format_prompt(self, template: str, **kwargs) -> str:
+        return PromptTemplate.from_template(template).format(**kwargs)
+
     def _parse_json_response(self, text: str) -> dict:
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
+            parsed = JsonOutputParser().parse(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
             pass
 
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if json_match:
+        json_block = re.search(r"\{[\s\S]*\}", text)
+        if json_block:
+            candidate = json_block.group(0)
             try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
+                parsed_json = json.loads(candidate)
+                if isinstance(parsed_json, dict):
+                    return parsed_json
+            except Exception:
                 pass
 
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
             try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
+                parsed_literal = ast.literal_eval(candidate)
+                if isinstance(parsed_literal, dict):
+                    return parsed_literal
+            except Exception:
                 pass
 
         return {

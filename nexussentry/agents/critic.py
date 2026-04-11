@@ -10,10 +10,9 @@ Provider preference: Groq (fast reasoning for quick reviews)
 """
 
 import json
-import re
 import hashlib
 import logging
-
+from langchain_core.output_parsers import JsonOutputParser
 from nexussentry.providers.llm_provider import get_provider
 from nexussentry.utils.response_cache import get_cache
 
@@ -144,24 +143,7 @@ WHAT EXECUTION PIPELINE DID:
         return verdict
 
     def _parse_json_response(self, text: str) -> dict:
-        """Robustly parse JSON from LLM response."""
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
+        parsed = JsonOutputParser().parse(text)
+        if isinstance(parsed, dict):
+            return parsed
         raise ValueError(f"Could not parse JSON from response: {text[:200]}")

@@ -17,11 +17,14 @@
 
 import json
 import os
-import re
 import sys
-import time
 import logging
-from typing import Optional
+import threading
+from typing import Any, Optional
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger("LLMProvider")
 
@@ -96,6 +99,10 @@ class LLMProvider:
         self._call_count = 0
         self._provider_usage = {}  # Track which provider was used how many times
         self._mock_call_counts = {}  # Track mock calls per agent for smart responses
+        self._disabled_providers: set[str] = set()
+        self._provider_failures: dict[str, int] = {}
+        max_concurrency = max(1, int(os.getenv("NEXUS_LLM_MAX_CONCURRENCY", "2")))
+        self._request_gate = threading.BoundedSemaphore(value=max_concurrency)
 
     def _detect_providers(self):
         """Scan .env for available API keys."""
@@ -142,12 +149,12 @@ class LLMProvider:
             return "mock"
 
         # If specific provider requested and available, use it
-        if prefer != "auto" and prefer in self._available:
+        if prefer != "auto" and prefer in self._available and prefer not in self._disabled_providers:
             return prefer
 
         # Auto: follow priority order
         for p in AUTO_PRIORITY:
-            if p in self._available:
+            if p in self._available and p not in self._disabled_providers:
                 return p
 
         return "mock"
@@ -184,6 +191,10 @@ class LLMProvider:
 
         # Route to correct provider
         try:
+            if provider != "mock":
+                with self._request_gate:
+                    return self._call_with_langchain(provider, system, user_msg, max_tokens)
+
             if provider == "gemini":
                 return self._call_gemini(system, user_msg, max_tokens)
             elif provider == "groq":
@@ -196,25 +207,21 @@ class LLMProvider:
                 return self._mock_response(system, user_msg, agent_name=agent_name)
         except Exception as e:
             logger.warning(f"  ⚠️  {label} failed: {e}. Trying fallback...")
+            self._maybe_disable_provider(provider, e)
             return self._fallback_chat(system, user_msg, max_tokens, exclude=provider)
 
     def _fallback_chat(self, system: str, user_msg: str,
                        max_tokens: int, exclude: str) -> str:
         """Try other providers if primary fails."""
         for p in AUTO_PRIORITY:
-            if p != exclude and p in self._available:
+            if p != exclude and p in self._available and p not in self._disabled_providers:
                 try:
                     logger.info(f"  🔄 Fallback → {PROVIDER_CONFIG[p]['label']}")
-                    if p == "gemini":
-                        return self._call_gemini(system, user_msg, max_tokens)
-                    elif p == "groq":
-                        return self._call_groq(system, user_msg, max_tokens)
-                    elif p == "openrouter":
-                        return self._call_openrouter(system, user_msg, max_tokens)
-                    elif p == "huggingface":
-                        return self._call_huggingface(system, user_msg, max_tokens)
+                    with self._request_gate:
+                        return self._call_with_langchain(p, system, user_msg, max_tokens)
                 except Exception as e:
                     logger.warning(f"  ⚠️  Fallback {p} also failed: {e}")
+                    self._maybe_disable_provider(p, e)
                     continue
 
         logger.warning("  ⚠️  All providers failed. Using mock response.")
@@ -223,6 +230,99 @@ class LLMProvider:
     # ═══════════════════════════════════════════
     # Provider Implementations
     # ═══════════════════════════════════════════
+
+    def _build_chat_messages(self, system: str, user_msg: str) -> list[Any]:
+        """Build messages with ChatPromptTemplate."""
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "{system}"),
+            ("human", "{user_msg}"),
+        ])
+        return prompt.format_messages(system=system, user_msg=user_msg)
+
+    def _extract_text_content(self, content: Any) -> str:
+        """Normalize LangChain model output content into plain text."""
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if text:
+                        parts.append(str(text))
+            merged = "\n".join(part for part in parts if part).strip()
+            if merged:
+                return merged
+
+        return str(content)
+
+    def _call_with_langchain(self, provider: str, system: str, user_msg: str, max_tokens: int) -> str:
+        """Use LangChain chat models for provider invocation."""
+
+        config = PROVIDER_CONFIG[provider]
+        model = config["default_model"]
+        api_key = self._available[provider]
+        messages = self._build_chat_messages(system, user_msg)
+
+        if provider == "gemini":
+            chat_model = ChatGoogleGenerativeAI(
+                model=model,
+                google_api_key=api_key,
+                temperature=0.7,
+                max_output_tokens=max_tokens,
+            )
+        elif provider == "huggingface":
+            if not os.getenv("HUGGINGFACEHUB_API_TOKEN"):
+                os.environ["HUGGINGFACEHUB_API_TOKEN"] = api_key
+
+            hf_llm = HuggingFaceEndpoint(
+                repo_id=model,
+                task="text-generation",
+                provider="auto",
+                max_new_tokens=max_tokens,
+                huggingfacehub_api_token=api_key,
+            )
+            chat_model = ChatHuggingFace(llm=hf_llm)
+        else:
+            chat_model = ChatOpenAI(
+                model=model,
+                api_key=api_key,
+                base_url=config["base_url"],
+                temperature=0.7,
+                max_tokens=max_tokens,
+                timeout=60,
+            )
+
+        response = chat_model.invoke(messages)
+        return self._extract_text_content(getattr(response, "content", response))
+
+    def _maybe_disable_provider(self, provider: str, err: Exception):
+        """Disable providers with hard quota/auth failures for the remainder of this run."""
+        msg = str(err).lower()
+        self._provider_failures[provider] = self._provider_failures.get(provider, 0) + 1
+
+        is_rate_hard_limit = (
+            "tokens per day" in msg
+            or "tpd" in msg
+            or "requests per minute" in msg
+            or "rpm" in msg
+            or "rate_limit_exceeded" in msg
+        )
+        is_fatal = (
+            "402" in msg
+            or "payment required" in msg
+            or "401" in msg
+            or "unauthorized" in msg
+            or "invalid api key" in msg
+            or "insufficient" in msg
+            or (is_rate_hard_limit and self._provider_failures.get(provider, 0) >= 3)
+        )
+        if is_fatal and provider in self._available and provider not in self._disabled_providers:
+            self._disabled_providers.add(provider)
+            logger.warning(f"  ⛔ Disabling provider '{provider}' for this run due to hard failure.")
 
     def _call_gemini(self, system: str, user_msg: str, max_tokens: int) -> str:
         """Call Google Gemini API via REST."""
@@ -364,57 +464,60 @@ class LLMProvider:
         system_lower = system.lower()
 
         if "decompos" in system_lower or "scout" in system_lower:
+            goal = user_msg.strip().splitlines()[0][:120] or "Build requested feature"
             return json.dumps({
-                "goal_summary": "Analyze and fix security vulnerabilities",
+                "goal_summary": goal,
                 "sub_tasks": [
-                    {"id": 1, "task": "Scan codebase for SQL injection vulnerabilities in database query functions", "priority": "high"},
-                    {"id": 2, "task": "Identify and patch XSS vulnerabilities in user input handling", "priority": "high"},
-                    {"id": 3, "task": "Review authentication module for insecure password hashing", "priority": "medium"},
+                    {"id": 1, "task": f"Define scope and requirements for: {goal}", "priority": "high", "depends_on": []},
+                    {"id": 2, "task": "Create core project/file structure and baseline implementation", "priority": "high", "depends_on": [1]},
+                    {"id": 3, "task": "Implement main feature logic and user interaction flow", "priority": "high", "depends_on": [2]},
+                    {"id": 4, "task": "Polish behavior, validate edge cases, and finalize output", "priority": "medium", "depends_on": [3]},
                 ],
-                "estimated_complexity": "complex"
+                "estimated_complexity": "medium"
             })
 
         elif "architect" in system_lower or "planner" in system_lower:
-            # Different plan based on attempt
-            if call_count == 1:
-                return json.dumps({
-                    "plan_summary": "Implement parameterized queries to prevent SQL injection",
-                    "approach": "Replace all string concatenation in SQL queries with parameterized statements using '?' placeholders",
-                    "files_to_read": ["db/queries.py", "models/user.py"],
-                    "files_to_modify": ["db/queries.py", "api/endpoints.py"],
-                    "commands_to_run": ["pytest tests/test_security.py", "bandit -r src/"],
-                    "success_criteria": "All SQL queries use parameterized statements",
-                    "risks": ["Existing query patterns may break if column names are dynamic"]
-                })
-            else:
-                return json.dumps({
-                    "plan_summary": "Implement strict parameterized queries with input validation (Revised)",
-                    "approach": "Address critic feedback: add robust input validation before parameterized queries.",
-                    "files_to_read": ["db/queries.py", "models/user.py"],
-                    "files_to_modify": ["db/queries.py", "api/endpoints.py", "utils/validation.py"],
-                    "commands_to_run": ["pytest tests/test_security.py", "bandit -r src/"],
-                    "success_criteria": "All SQL queries use parameterized statements AND input validation is added",
-                    "risks": ["More extensive file changes required"]
-                })
+            task_hint = user_msg.strip().splitlines()[0].replace("Sub-task:", "").strip()
+            files = ["index.html", "game.js", "styles.css"]
+            if "python" in user_msg.lower() or "api" in user_msg.lower():
+                files.append("main.py")
+            return json.dumps({
+                "plan_summary": task_hint or "Implement requested feature",
+                "approach": "Deliver complete, production-ready files with coherent integration and edge-case handling.",
+                "files_to_read": [],
+                "files_to_modify": files,
+                "commands_to_run": ["python -m pytest -q"],
+                "success_criteria": "Feature works end-to-end without placeholder code.",
+                "risks": ["Provider fallback mode may reduce depth; verify generated artifacts."]
+            })
 
         elif "critic" in system_lower or "reviewer" in system_lower:
             # SMART MOCK: Reject the first attempt to show the feedback loop
             if call_count == 1:
                 return json.dumps({
                     "decision": "reject",
-                    "score": 62,
-                    "reasoning": "The implementation correctly uses parameterized queries, BUT completely misses input validation for edge cases.",
-                    "issues_found": ["Critical: Missing input validation before DB queries", "Minor: Error messages leak table names"],
-                    "suggestions": ["Add a strict validation layer before hitting the DB"]
+                    "score": 68,
+                    "reasoning": "Core direction is acceptable, but generated output lacks completeness and integration detail.",
+                    "issues_found": ["Incomplete implementation coverage", "Missing robustness for edge cases"],
+                    "suggestions": ["Return full file-level implementations with integrated behavior"]
                 })
             else:
                 return json.dumps({
                     "decision": "approve",
-                    "score": 88,
-                    "reasoning": "The revised implementation uses parameterized queries AND includes robust input validation. Security improved.",
-                    "issues_found": ["Minor: Performance impact of extra validation layer (acceptable)"],
-                    "suggestions": ["Add integration tests for edge cases with special characters"]
+                    "score": 87,
+                    "reasoning": "Implementation is coherent and complete enough for simulated execution context.",
+                    "issues_found": [],
+                    "suggestions": ["Add focused runtime tests for gameplay interactions"]
                 })
+
+        elif "qa verifier" in system_lower or "qa" in system_lower:
+            return json.dumps({
+                "decision": "pass",
+                "score": 85,
+                "issues_found": [],
+                "suggestions": ["Run a quick manual smoke test on generated artifacts"],
+                "summary": "Fallback QA accepted generated outputs in degraded provider mode."
+            })
 
         elif "security" in system_lower or "scanner" in system_lower:
             return json.dumps({"safe": True})

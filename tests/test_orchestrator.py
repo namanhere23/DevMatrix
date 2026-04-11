@@ -2,12 +2,14 @@
 Integration tests for the orchestrator's core flows:
   - reject → retry → approve loop
     - max-rejections → user-decision escalation path
-  - sequential execution order
+    - dependency-aware execution context behavior
 """
 
 import pytest
 import asyncio
+import time
 from unittest.mock import patch, MagicMock, AsyncMock
+from types import SimpleNamespace
 
 from nexussentry.agents.critic import CriticAgent
 from nexussentry.agents.builder import BuilderAgent
@@ -108,8 +110,8 @@ class TestCriticCacheKey:
         assert hash_a != hash_b, "Different plans should produce different cache keys"
 
 
-class TestSequentialExecution:
-    """Tests that sub-tasks execute in order, not in parallel."""
+class TestDependencyExecutionContext:
+    """Tests for shared context behavior across task progress."""
 
     @patch("nexussentry.providers.llm_provider._global_provider", None)
     def test_tasks_execute_in_order(self):
@@ -228,3 +230,255 @@ class TestBuilderPipeline:
         assert builder_result["generated_files"]["app.py"] == "print('ok')"
         assert integration_result["generated_files"]["app.py"] == "print('ok')"
         assert qa_result["passed"] is True
+
+
+class TestDependencyWaveScheduler:
+    """Tests for dependency-wave execution and strict QA gate behavior."""
+
+    def _install_swarm_stubs(self, monkeypatch, sub_tasks, qa_verdicts):
+        """Patch run_swarm dependencies with deterministic in-memory stubs."""
+        from nexussentry import main as orchestrator
+
+        state = {
+            "architect_calls": 0,
+            "critic_calls": 0,
+            "qa_calls": 0,
+            "build_starts": {},
+            "build_ends": {},
+            "build_order": [],
+        }
+
+        class FakeTracer:
+            def __init__(self):
+                self.events = []
+
+            def log(self, agent, event, payload):
+                self.events.append((agent, event, payload))
+
+            def record_task_status(self, *args, **kwargs):
+                return None
+
+            def mark_complete(self):
+                return None
+
+            def summary(self):
+                return {
+                    "total_time_s": 0,
+                    "total_events": 0,
+                    "agents_used": [],
+                    "approvals": 0,
+                    "rejections": 0,
+                    "log_file": "test.log",
+                }
+
+        class FakeGuardian:
+            def scan(self, *_args, **_kwargs):
+                return {"safe": True}
+
+            def stats(self):
+                return {"scans_performed": 1}
+
+        class FakeScout:
+            def decompose(self, *_args, **_kwargs):
+                return {
+                    "goal_summary": "test goal",
+                    "estimated_complexity": "medium",
+                    "sub_tasks": sub_tasks,
+                }
+
+        class FakeArchitect:
+            def plan(self, sub_task, **_kwargs):
+                state["architect_calls"] += 1
+                return {
+                    "plan_summary": sub_task,
+                    "files_to_modify": [f"{sub_task}.py"],
+                    "builder_dispatch": {"builder_count": 1},
+                }
+
+        class FakeBuilder:
+            def __init__(self):
+                self.claw = SimpleNamespace(execution_mode="simulated")
+
+            def build(self, plan, *_args, **_kwargs):
+                task_name = plan["plan_summary"]
+                state["build_order"].append(task_name)
+                state["build_starts"][task_name] = time.perf_counter()
+                if task_name in ("A", "B"):
+                    time.sleep(0.05)
+                state["build_ends"][task_name] = time.perf_counter()
+                return {
+                    "success": True,
+                    "execution_mode": "simulated",
+                    "builder_reports": [{"builder_id": "builder-1", "status": "ok"}],
+                    "generated_files": {f"{task_name}.py": f"print('{task_name}')"},
+                    "saved_to": "",
+                }
+
+        class FakeIntegrator:
+            def integrate(self, _plan, builder_result, *_args, **_kwargs):
+                return {
+                    "integrator_summary": "integrated",
+                    "generated_files": builder_result.get("generated_files", {}),
+                    "execution_mode": builder_result.get("execution_mode", "simulated"),
+                    "saved_to": "",
+                }
+
+        class FakeQA:
+            def verify(self, *_args, **_kwargs):
+                state["qa_calls"] += 1
+                verdict_index = min(state["qa_calls"] - 1, len(qa_verdicts) - 1)
+                verdict = qa_verdicts[verdict_index]
+                return {
+                    "passed": verdict["passed"],
+                    "score": verdict.get("score", 100 if verdict["passed"] else 0),
+                    "issues_found": verdict.get("issues_found", []),
+                    "suggestions": verdict.get("suggestions", []),
+                }
+
+        class FakeCritic:
+            def __init__(self, max_rejections=2):
+                self.max_rejections = max_rejections
+
+            def review(self, *_args, **_kwargs):
+                state["critic_calls"] += 1
+                return {
+                    "decision": "approve",
+                    "score": 96,
+                    "issues_found": [],
+                    "suggestions": [],
+                }
+
+        class FakePermissionGate:
+            async def request_retry_permission(self, *_args, **_kwargs):
+                return False
+
+        class FakeMemory:
+            def summarize_context(self):
+                return ""
+
+            def record_fact(self, *_args, **_kwargs):
+                return None
+
+            def get_actionable_constraints(self, **_kwargs):
+                return ""
+
+            def record_builder_dispatch(self, *_args, **_kwargs):
+                return None
+
+            def has_file_conflict(self, *_args, **_kwargs):
+                return []
+
+            def record_critic_feedback(self, *_args, **_kwargs):
+                return None
+
+            def record_task_result(self, *_args, **_kwargs):
+                return None
+
+            def mark_file_modified(self, *_args, **_kwargs):
+                return None
+
+        class FakeCache:
+            def stats(self):
+                return {"hit_rate": "0%"}
+
+        class FakeProvider:
+            available_providers = ["mock"]
+            mock_mode = True
+
+            def provider_summary_str(self):
+                return "mock"
+
+            def agent_routing_str(self):
+                return "all -> mock"
+
+            def stats(self):
+                return {"total_calls": 0, "provider_usage": {"mock": 0}}
+
+        monkeypatch.setattr(orchestrator, "AgentTracer", FakeTracer)
+        monkeypatch.setattr(orchestrator, "GuardianAI", FakeGuardian)
+        monkeypatch.setattr(orchestrator, "ScoutAgent", FakeScout)
+        monkeypatch.setattr(orchestrator, "ArchitectAgent", FakeArchitect)
+        monkeypatch.setattr(orchestrator, "BuilderAgent", FakeBuilder)
+        monkeypatch.setattr(orchestrator, "IntegratorAgent", FakeIntegrator)
+        monkeypatch.setattr(orchestrator, "QAVerifierAgent", FakeQA)
+        monkeypatch.setattr(orchestrator, "CriticAgent", FakeCritic)
+        monkeypatch.setattr(orchestrator, "UserPermissionGate", FakePermissionGate)
+        monkeypatch.setattr(orchestrator, "SwarmMemory", FakeMemory)
+        monkeypatch.setattr(orchestrator, "get_cache", lambda: FakeCache())
+        monkeypatch.setattr(orchestrator, "get_provider", lambda: FakeProvider())
+        monkeypatch.setattr(orchestrator, "print_banner", lambda: None)
+
+        return orchestrator, state
+
+    def test_dependency_waves_run_parallel_then_unlock_dependents(self, monkeypatch):
+        """Independent tasks should run together; dependent tasks should run after."""
+        sub_tasks = [
+            {"id": 1, "task": "A", "priority": "high", "depends_on": []},
+            {"id": 2, "task": "B", "priority": "high", "depends_on": []},
+            {"id": 3, "task": "C", "priority": "high", "depends_on": [1, 2]},
+        ]
+        orchestrator, state = self._install_swarm_stubs(
+            monkeypatch,
+            sub_tasks=sub_tasks,
+            qa_verdicts=[{"passed": True}],
+        )
+
+        results = asyncio.run(orchestrator.run_swarm("test", enable_dashboard=False, slow=False))
+        status_by_id = {item["task_id"]: item["status"] for item in results}
+
+        assert status_by_id[1] == "done"
+        assert status_by_id[2] == "done"
+        assert status_by_id[3] == "done"
+        assert set(state["build_order"][:2]) == {"A", "B"}
+        assert state["build_order"][2] == "C"
+        assert state["build_starts"]["C"] >= state["build_ends"]["A"]
+        assert state["build_starts"]["C"] >= state["build_ends"]["B"]
+
+    def test_qa_failure_retries_before_critic(self, monkeypatch):
+        """Critic should run only after QA passes, with retries driven by QA failures."""
+        sub_tasks = [{"id": 1, "task": "A", "priority": "high", "depends_on": []}]
+        orchestrator, state = self._install_swarm_stubs(
+            monkeypatch,
+            sub_tasks=sub_tasks,
+            qa_verdicts=[
+                {
+                    "passed": False,
+                    "score": 42,
+                    "issues_found": ["missing tests"],
+                    "suggestions": ["add tests"],
+                },
+                {"passed": True, "score": 95},
+            ],
+        )
+
+        results = asyncio.run(orchestrator.run_swarm("test", enable_dashboard=False, slow=False))
+
+        assert results[0]["status"] == "done"
+        assert results[0]["attempts"] == 2
+        assert state["architect_calls"] == 2
+        assert state["critic_calls"] == 1
+
+    def test_failed_dependency_causes_downstream_skip(self, monkeypatch):
+        """When a dependency fails, dependent tasks should be skipped as blocked."""
+        sub_tasks = [
+            {"id": 1, "task": "A", "priority": "high", "depends_on": []},
+            {"id": 2, "task": "B", "priority": "high", "depends_on": [1]},
+        ]
+        orchestrator, _state = self._install_swarm_stubs(
+            monkeypatch,
+            sub_tasks=sub_tasks,
+            qa_verdicts=[
+                {
+                    "passed": False,
+                    "score": 30,
+                    "issues_found": ["critical QA failure"],
+                    "suggestions": ["fix issue"],
+                }
+            ],
+        )
+
+        results = asyncio.run(orchestrator.run_swarm("test", enable_dashboard=False, slow=False))
+        status_by_id = {item["task_id"]: item["status"] for item in results}
+
+        assert status_by_id[1] == "failed"
+        assert status_by_id[2] == "skipped"

@@ -16,6 +16,7 @@ import asyncio
 import os
 import sys
 import logging
+from typing import Any
 from dotenv import load_dotenv
 
 # Fix Windows console encoding — must be before any emoji output
@@ -75,11 +76,12 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     Main orchestration loop.
 
     Flow:
-        User Goal → Guardian (security) → Scout (decompose) →
-        for each sub-task (SEQUENTIAL — conflict-aware):
-            Architect (plan) → Builder(s) → Integrator → QA Verifier → Critic (review)
-            if rejected: loop back to Architect with feedback
-            if max rejections: ask user whether to retry once or return current output
+        User Goal → Guardian (security) → Scout (decompose with dependencies) →
+        execute ready sub-tasks in parallel waves (dependency-aware):
+            Architect (plan) → Builder(s) → Integrator → QA Verifier (strict gate)
+            if QA fails: retry directly with QA feedback
+            if QA passes: Critic reviews; rejection loops back to Architect
+            if Critic escalates: ask user whether to retry or return current output
     """
     print_banner()
     print(f"  📋 Goal: {user_goal}")
@@ -149,7 +151,49 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     context = memory.summarize_context()
     scout_input = user_goal if not context else f"{user_goal}\n\nContext:\n{context}"
     decomposition = scout.decompose(scout_input, tracer)
-    sub_tasks = decomposition.get("sub_tasks", [])
+    raw_sub_tasks = decomposition.get("sub_tasks", [])
+
+    def _normalize_sub_tasks(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Normalize IDs/dependencies so orchestration can safely schedule tasks."""
+        normalized: list[dict[str, Any]] = []
+        used_ids: set[int] = set()
+
+        for index, item in enumerate(items, start=1):
+            try:
+                task_id = int(item.get("id", index))
+            except (TypeError, ValueError):
+                task_id = index
+
+            while task_id in used_ids:
+                task_id += 1
+            used_ids.add(task_id)
+
+            depends_on = item.get("depends_on", [])
+            if isinstance(depends_on, (int, str)):
+                depends_on = [depends_on]
+
+            dep_ids: list[int] = []
+            for dep in depends_on:
+                try:
+                    dep_id = int(dep)
+                except (TypeError, ValueError):
+                    continue
+                if dep_id != task_id:
+                    dep_ids.append(dep_id)
+
+            normalized.append({
+                **item,
+                "id": task_id,
+                "depends_on": sorted(set(dep_ids)),
+            })
+
+        valid_ids = {t["id"] for t in normalized}
+        for task in normalized:
+            task["depends_on"] = [dep for dep in task.get("depends_on", []) if dep in valid_ids]
+
+        return normalized
+
+    sub_tasks = _normalize_sub_tasks(raw_sub_tasks)
 
     if not sub_tasks:
         print("  ⚠️  Scout returned no sub-tasks. Aborting.")
@@ -163,38 +207,37 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     results = []
 
     # ══════════════════════════════════════════════
-    # STEPS 2-5: Architect → Builder(s) → Integrator → QA → Critic loop
-    # SEQUENTIAL execution — each task feeds context
-    # to the next via SwarmMemory
+    # STEPS 2-6: Dependency-based parallel execution waves
+    # Architect → Builder(s) → Integrator → QA (strict fail) → Critic
     # ══════════════════════════════════════════════
     stop_requested = False
-    for task_obj in sub_tasks:
+
+    async def _execute_sub_task(task_obj: dict[str, Any]) -> dict[str, Any]:
         task_id = task_obj.get("id", "?")
         task_desc = task_obj.get("task", "Unknown task")
         priority = task_obj.get("priority", "medium").upper()
+        dependencies = task_obj.get("depends_on", [])
 
         print(f"\n  {'─' * 56}")
-        print(f"  📌 Sub-task {task_id}/{len(sub_tasks)} [{priority}]: {task_desc}")
+        dep_label = f" deps={dependencies}" if dependencies else " deps=[]"
+        print(f"  📌 Sub-task {task_id}/{len(sub_tasks)} [{priority}]{dep_label}: {task_desc}")
 
-        tracer.set_current_task(task_desc)
         feedback = ""
-
-        # Single CriticAgent per sub-task — tracks rejection_count across retry attempts
         critic = CriticAgent(max_rejections=2)
+        execution_result: dict[str, Any] = {}
 
         for attempt in range(3):
             print(f"\n    ▸ Attempt {attempt + 1}/3 for Sub-task {task_id}")
 
-            # ── Step 2: Architect plans ──
-            if slow: await asyncio.sleep(1.5)
+            if slow:
+                await asyncio.sleep(1.5)
 
-            # Feed memory constraints into the Architect
             plan_context = memory.summarize_context()
             constraints = memory.get_actionable_constraints(
                 proposed_files=task_obj.get("files_to_modify", [])
             )
             if constraints:
-                plan_context += f"\n\n{constraints}"
+                plan_context = f"{plan_context}\n\n{constraints}".strip()
 
             plan = await asyncio.to_thread(
                 architect.plan,
@@ -211,22 +254,20 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 plan.get("builder_dispatch", {})
             )
 
-            # ── Check for file conflicts before execution ──
             proposed_files = plan.get("files_to_modify", [])
             conflicts = memory.has_file_conflict(proposed_files)
             if conflicts:
                 print(f"    ⚠️  File conflict detected: {', '.join(conflicts)}")
-                print(f"    ⚠️  These files were modified by a previous task. Proceeding with caution.")
+                print("    ⚠️  These files were modified by previous completed tasks.")
 
-            # ── Step 3: Builder(s) execute ──
-            if slow: await asyncio.sleep(2)
+            if slow:
+                await asyncio.sleep(2)
             builder_result = await asyncio.to_thread(
                 builder.build,
                 plan,
                 tracer
             )
 
-            # ── Step 4: Integrator merges artifacts ──
             integration_result = await asyncio.to_thread(
                 integrator.integrate,
                 plan,
@@ -234,7 +275,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 tracer
             )
 
-            # ── Step 5: QA Verifier checks integrated output ──
             qa_result = await asyncio.to_thread(
                 qa_verifier.verify,
                 plan,
@@ -251,8 +291,31 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 "success": builder_result.get("success", True) and qa_result.get("passed", True),
             }
 
-            # ── Step 6: Critic reviews ──
-            if slow: await asyncio.sleep(1.5)
+            # Strict QA gate: Critic runs only if QA passes.
+            if not qa_result.get("passed", False):
+                qa_issues = qa_result.get("issues_found", [])
+                qa_suggestions = qa_result.get("suggestions", [])
+                feedback = (
+                    f"QA failed. Issues: {', '.join(qa_issues)}. "
+                    f"Suggestions: {', '.join(qa_suggestions)}"
+                )
+                memory.record_critic_feedback(f"Task '{task_desc}' QA: " + feedback)
+                print(f"    ❌ QA failed for sub-task {task_id}; retrying before Critic.")
+                if attempt < 2:
+                    continue
+
+                return {
+                    "task_id": task_id,
+                    "task": task_desc,
+                    "status": "failed",
+                    "score": qa_result.get("score", 0),
+                    "attempts": attempt + 1,
+                    "execution_mode": execution_result.get("execution_mode", "unknown"),
+                    "saved_to": execution_result.get("saved_to", ""),
+                }
+
+            if slow:
+                await asyncio.sleep(1.5)
             verdict = await asyncio.to_thread(
                 critic.review,
                 original_task=task_desc,
@@ -265,25 +328,23 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 score = verdict.get("score", "?")
                 exec_mode_tag = execution_result.get("execution_mode", "unknown").upper()
                 print(f"\n    ✅ Sub-task {task_id} complete! (score: {score}/100) [{exec_mode_tag}]")
-                
-                # Record to SwarmMemory
+
                 memory.record_task_result(task_id, task_desc, f"Completed with score {score}")
-                for f in plan.get("files_to_modify", []):
-                    memory.mark_file_modified(f)
-                    
-                results.append({
+                for file_path in plan.get("files_to_modify", []):
+                    memory.mark_file_modified(file_path)
+
+                return {
+                    "task_id": task_id,
                     "task": task_desc,
                     "status": "done",
                     "score": score,
                     "attempts": attempt + 1,
                     "execution_mode": execution_result.get("execution_mode", "unknown"),
                     "saved_to": execution_result.get("saved_to", ""),
-                })
-                break
+                }
 
-            elif verdict["decision"] == "escalate_to_human":
+            if verdict["decision"] == "escalate_to_human":
                 tracer.log("UserPermission", "retry_requested", {"task": task_desc})
-
                 retry_approved = await permission_gate.request_retry_permission(
                     message=f"Task: {task_desc}",
                     details={
@@ -305,39 +366,119 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
 
                 tracer.log("UserPermission", "retry_denied", {})
                 print(f"    ⏹️  User declined retry. Returning current results.")
-                results.append({
+                return {
+                    "task_id": task_id,
                     "task": task_desc,
                     "status": "partial_output",
                     "attempts": attempt + 1,
                     "execution_mode": execution_result.get("execution_mode", "unknown"),
                     "saved_to": execution_result.get("saved_to", ""),
+                    "stop_requested": True,
+                }
+
+            issues = verdict.get("issues_found", [])
+            score = verdict.get("score", "?")
+            feedback = (
+                f"Previous attempt scored {score}/100. "
+                f"Issues: {', '.join(issues)}. "
+                f"Suggestions: {', '.join(verdict.get('suggestions', []))}"
+            )
+            memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
+            print(f"    🔄 Retrying sub-task {task_id} with Critic feedback...")
+
+        return {
+            "task_id": task_id,
+            "task": task_desc,
+            "status": "failed",
+            "score": 0,
+            "attempts": 3,
+            "execution_mode": execution_result.get("execution_mode", "unknown"),
+            "saved_to": execution_result.get("saved_to", ""),
+        }
+
+    pending = {task["id"]: task for task in sub_tasks}
+    completed_ids: set[int] = set()
+    failed_ids: set[int] = set()
+
+    while pending and not stop_requested:
+        blocked_ids = []
+        for task_id, task_obj in list(pending.items()):
+            deps = task_obj.get("depends_on", [])
+            if any(dep in failed_ids for dep in deps):
+                blocked_ids.append(task_id)
+                results.append({
+                    "task_id": task_id,
+                    "task": task_obj.get("task", "Unknown task"),
+                    "status": "skipped",
+                    "attempts": 0,
+                    "execution_mode": "n/a",
                 })
-                stop_requested = True
-                break
-
-            else:
-                # Critic rejected → loop back with feedback
-                issues = verdict.get("issues_found", [])
-                score = verdict.get("score", "?")
-                feedback = (
-                    f"Previous attempt scored {score}/100. "
-                    f"Issues: {', '.join(issues)}. "
-                    f"Suggestions: {', '.join(verdict.get('suggestions', []))}"
+                tracer.record_task_status(
+                    task_obj.get("task", "Unknown task"),
+                    "skipped",
+                    execution_mode="n/a",
+                    score=0,
+                    attempts=0,
                 )
-                memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
-                print(f"    🔄 Retrying sub-task {task_id} with Critic feedback...")
-        else:
-            # Max attempts reached (for-else: only when loop completes without break)
-            results.append({
-                "task": task_desc,
-                "status": "failed",
-                "score": 0,
-                "attempts": 3,
-                "execution_mode": execution_result.get("execution_mode", "unknown"),
-            })
+                failed_ids.add(task_id)
 
-        if stop_requested:
+        for task_id in blocked_ids:
+            pending.pop(task_id, None)
+
+        if not pending:
             break
+
+        ready_tasks = [
+            task_obj
+            for task_obj in pending.values()
+            if all(dep in completed_ids for dep in task_obj.get("depends_on", []))
+        ]
+
+        if not ready_tasks:
+            print("\n  ⚠️  No dependency-ready tasks remain; possible dependency cycle.")
+            for task_id, task_obj in list(pending.items()):
+                results.append({
+                    "task_id": task_id,
+                    "task": task_obj.get("task", "Unknown task"),
+                    "status": "skipped",
+                    "attempts": 0,
+                    "execution_mode": "n/a",
+                })
+                tracer.record_task_status(
+                    task_obj.get("task", "Unknown task"),
+                    "skipped",
+                    execution_mode="n/a",
+                    score=0,
+                    attempts=0,
+                )
+                pending.pop(task_id, None)
+            break
+
+        ready_ids = [task.get("id") for task in ready_tasks]
+        print(f"\n  🚀 Executing dependency-ready wave in parallel: {ready_ids}")
+        wave_results = await asyncio.gather(*[_execute_sub_task(task_obj) for task_obj in ready_tasks])
+
+        for task_result in wave_results:
+            task_id = task_result.get("task_id")
+            status = task_result.get("status", "failed")
+            pending.pop(task_id, None)
+            results.append(task_result)
+
+            tracer.record_task_status(
+                task_result.get("task", "Unknown task"),
+                status,
+                execution_mode=task_result.get("execution_mode", "unknown"),
+                score=int(task_result.get("score", 0) or 0),
+                attempts=int(task_result.get("attempts", 0) or 0),
+            )
+
+            if status == "done":
+                completed_ids.add(task_id)
+            else:
+                failed_ids.add(task_id)
+
+            if task_result.get("stop_requested"):
+                stop_requested = True
 
     # ══════════════════════════════════════════════
     # FINAL SUMMARY

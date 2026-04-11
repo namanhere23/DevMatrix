@@ -10,8 +10,10 @@ Provider preference: OpenRouter (diverse model access)
 """
 
 import json
-import re
 import logging
+
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
 
 from nexussentry.providers.llm_provider import get_provider
 from nexussentry.utils.response_cache import get_cache
@@ -61,13 +63,24 @@ class ArchitectAgent:
                 tracer.log("Architect", "plan_done", {**cached, "from_cache": True, "provider": "cache"})
             return cached
 
-        user_msg = f"Sub-task: {sub_task}"
-        if feedback:
-            user_msg += f"\n\nPrevious attempt failed. Critic feedback:\n{feedback}"
-        user_msg += f"\n\nTask priority: {task_priority}"
-        user_msg += f"\nEstimated complexity: {estimated_complexity}"
-        if context:
-            user_msg += f"\n\nContext:\n{context}"
+        user_msg = PromptTemplate.from_template(
+            """Sub-task: {sub_task}
+
+Previous attempt failed. Critic feedback:
+{feedback}
+
+Task priority: {task_priority}
+Estimated complexity: {estimated_complexity}
+
+Context:
+{context}""",
+        ).format(
+            sub_task=sub_task,
+            feedback=feedback or "none",
+            task_priority=task_priority,
+            estimated_complexity=estimated_complexity,
+            context=context or "none",
+        )
 
         try:
             raw_text = provider.chat(
@@ -183,24 +196,7 @@ class ArchitectAgent:
         }
 
     def _parse_json_response(self, text: str) -> dict:
-        """Robustly parse JSON from LLM response."""
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
+        parsed = JsonOutputParser().parse(text)
+        if isinstance(parsed, dict):
+            return parsed
         raise ValueError(f"Could not parse JSON from response: {text[:200]}")

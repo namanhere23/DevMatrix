@@ -82,16 +82,13 @@ class IntegratorAgent:
         saved_files = []
 
         for filename, content in generated_files.items():
-            try:
-                safe_name = re.sub(r'[<>:"|?*]', '_', Path(filename).name)
-                if not safe_name:
-                    continue
+            safe_name = re.sub(r'[<>:"|?*]', '_', Path(filename).name)
+            if not safe_name:
+                continue
 
-                path = session_dir / safe_name
-                path.write_text(content, encoding="utf-8")
-                saved_files.append(str(path))
-            except Exception as exc:
-                logger.warning("Could not save %s: %s", filename, exc)
+            path = session_dir / safe_name
+            path.write_text(content, encoding="utf-8")
+            saved_files.append(str(path))
 
         readme_path = session_dir / "README.md"
         if not readme_path.exists():

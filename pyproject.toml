@@ -16,6 +16,10 @@ authors = [
 dependencies = [
     "python-dotenv>=1.0.1",
     "requests>=2.31.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-google-genai>=2.0.0",
+    "langchain-huggingface>=0.1.0",
 ]
 
 [project.optional-dependencies]

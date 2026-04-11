@@ -3,15 +3,14 @@
 Agent A — The Scout
 ━━━━━━━━━━━━━━━━━━━
 Receives a high-level user goal and decomposes it into
-3-5 concrete, sequential, actionable sub-tasks.
+3-5 concrete, actionable sub-tasks with explicit dependencies.
 
 Role in the swarm: First contact. Task decomposition specialist.
 Provider preference: Gemini (fast, cheap decomposition)
 """
 
-import json
 import logging
-
+from langchain_core.output_parsers import JsonOutputParser
 from nexussentry.providers.llm_provider import get_provider
 from nexussentry.utils.response_cache import get_cache
 
@@ -19,17 +18,22 @@ logger = logging.getLogger("Scout")
 
 SCOUT_SYSTEM = """You are The Scout — a master task decomposer.
 
-When given a high-level goal, break it into 3-5 concrete, sequential sub-tasks.
+When given a high-level goal, break it into 3-5 concrete sub-tasks with dependency metadata.
 Each sub-task must be:
 - Self-contained (can be worked on independently)
 - Specific (not vague like "improve code")
 - Actionable (a developer could start immediately)
 
+Use dependency-based planning:
+- Include "depends_on": [] for tasks with no prerequisites
+- Include "depends_on": [id, ...] for tasks that require earlier tasks
+- Prefer parallelizable tasks when feasible
+
 Respond ONLY with valid JSON — no preamble, no markdown:
 {
   "goal_summary": "one sentence summary",
   "sub_tasks": [
-    {"id": 1, "task": "specific task description", "priority": "high/medium/low"}
+        {"id": 1, "task": "specific task description", "priority": "high/medium/low", "depends_on": []}
   ],
   "estimated_complexity": "simple/medium/complex"
 }"""
@@ -96,31 +100,7 @@ class ScoutAgent:
             return fallback
 
     def _parse_json_response(self, text: str) -> dict:
-        """
-        Robustly parse JSON from LLM response.
-        Handles cases where the LLM wraps JSON in markdown code blocks.
-        """
-        # Try direct parse first
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        # Try extracting from markdown code block
-        import re
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # Try finding JSON object pattern
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
+        parsed = JsonOutputParser().parse(text)
+        if isinstance(parsed, dict):
+            return parsed
         raise ValueError(f"Could not parse JSON from response: {text[:200]}")

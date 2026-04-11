@@ -16,10 +16,11 @@ Layer 6 uses whatever LLM provider is available (Gemini preferred for speed).
 """
 
 import re
-import json
 import time
 import logging
 from typing import Optional
+
+from langchain_core.output_parsers import JsonOutputParser
 
 logger = logging.getLogger("Guardian")
 
@@ -249,13 +250,19 @@ Reply ONLY with valid JSON: {"safe": true} or {"safe": false, "reason": "..."}""
                 agent_name="guardian"
             )
 
-            result = json.loads(raw)
+            result = self._parse_json_response(raw)
             return result
 
         except Exception as e:
             # LLM scan is optional — don't crash if it fails
             logger.debug(f"LLM scan skipped: {e}")
             return None
+
+    def _parse_json_response(self, text: str) -> dict:
+        parsed = JsonOutputParser().parse(text)
+        if isinstance(parsed, dict):
+            return parsed
+        raise ValueError(f"Could not parse JSON from response: {text[:200]}")
 
     def stats(self) -> dict:
         """Return security scanning statistics."""
