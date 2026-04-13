@@ -96,7 +96,7 @@ Focus EXCLUSIVELY on:
 
 {rubric}
 
-IMPORTANT: If execution_mode is "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
+IMPORTANT: If execution_mode is "python" or "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
 
 Respond ONLY with valid JSON:
 {{
@@ -121,7 +121,7 @@ Focus EXCLUSIVELY on:
 
 {rubric}
 
-IMPORTANT: If execution_mode is "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
+IMPORTANT: If execution_mode is "python" or "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
 
 Respond ONLY with valid JSON:
 {{
@@ -146,7 +146,7 @@ Focus EXCLUSIVELY on:
 
 {rubric}
 
-IMPORTANT: If execution_mode is "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
+IMPORTANT: If execution_mode is "python" or "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
 
 Respond ONLY with valid JSON:
 {{

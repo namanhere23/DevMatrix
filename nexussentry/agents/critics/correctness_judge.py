@@ -19,5 +19,5 @@ Evaluation rubric (score these dimensions, sum to get total):
 - Would pass reasonable unit tests: 0-20 points
 
 Score < 70 = reject. Be strict. "Mostly correct" is a reject.
-IMPORTANT: If execution_mode is "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
+IMPORTANT: If execution_mode is "python" or "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
 Respond ONLY with the JSON format requested."""

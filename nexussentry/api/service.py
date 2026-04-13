@@ -13,7 +13,6 @@ from typing import Any, Callable
 
 from fastapi import HTTPException, status
 
-from nexussentry.adapters.nexus_backend import NexusClawBackend
 from nexussentry.agents.architect import ArchitectAgent
 from nexussentry.agents.builder import BuilderAgent
 from nexussentry.agents.critic import CriticAgent
@@ -646,7 +645,6 @@ class RunService:
     def health_ready(self) -> dict[str, Any]:
         storage_ok = self.store.data_dir.exists() and os.access(self.store.data_dir, os.W_OK)
         provider = get_provider()
-        claw = NexusClawBackend().health()
         status_value = "ready" if storage_ok else "not_ready"
         return {
             "status": status_value,
@@ -656,6 +654,6 @@ class RunService:
                 "default_engine": self.default_engine().value,
                 "providers_available": provider.available_providers,
                 "mock_mode": provider.mock_mode,
-                "execution_mode": claw["execution_mode"],
+                "execution_mode": BuilderAgent.execution_mode,
             },
         }

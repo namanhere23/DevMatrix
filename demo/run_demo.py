@@ -114,16 +114,15 @@ def run_health_check():
     except Exception as e:
         checks.append(("Provider Routing", False, str(e)))
 
-    # Check 9: Claw Code / Execution Mode (NEW — judge-grade)
+    # Check 9: Builder execution path
     try:
-        from nexussentry.adapters.claw_bridge import ClawBridge
-        bridge = ClawBridge()
-        if bridge.claw_available:
-            checks.append(("Claw Code (Rust)", True, "REAL execution available"))
-        else:
-            checks.append(("Claw Code (Rust)", True, f"SIMULATED mode (binary '{bridge.binary}' not found)"))
+        from nexussentry.agents.builder import BuilderAgent
+        b = BuilderAgent()
+        checks.append(
+            ("Builder execution", True, f"mode={b.execution_mode} (in-process LLM)"),
+        )
     except Exception as e:
-        checks.append(("Claw Code (Rust)", False, str(e)))
+        checks.append(("Builder execution", False, str(e)))
 
     # Check 10: User permission gate status
     try:
@@ -230,9 +229,8 @@ def _print_readiness_report():
 
     # Execution mode
     try:
-        from nexussentry.adapters.claw_bridge import ClawBridge
-        bridge = ClawBridge()
-        exec_mode = bridge.execution_mode.upper()
+        from nexussentry.agents.builder import BuilderAgent
+        exec_mode = BuilderAgent.execution_mode.upper()
     except Exception:
         exec_mode = "UNKNOWN"
 

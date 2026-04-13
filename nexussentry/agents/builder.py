@@ -16,7 +16,6 @@ from pathlib import Path
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 
-from nexussentry.adapters.claw_bridge import ClawBridge
 from nexussentry.providers.llm_provider import get_provider
 
 logger = logging.getLogger("Builder")
@@ -46,9 +45,8 @@ class BuilderAgent:
     """Runs dynamic builder fan-out and returns generated artifacts."""
 
     MAX_BUILDERS = 5
-
-    def __init__(self):
-        self.claw = ClawBridge()
+    # In-process LLM code generation (no external sandbox binary).
+    execution_mode = "python"
 
     def build(self, plan: dict, tracer=None) -> dict:
         """Run specialized builders according to Architect dispatch metadata."""
@@ -59,13 +57,13 @@ class BuilderAgent:
         if tracer:
             tracer.log("Builder", "build_start", {
                 "provider": provider_name,
-                "execution_mode": self.claw.execution_mode,
+                "execution_mode": self.execution_mode,
             })
 
         if not files_to_modify:
             result = {
                 "success": True,
-                "execution_mode": self.claw.execution_mode,
+                "execution_mode": self.execution_mode,
                 "builder_reports": [],
                 "generated_files": {},
                 "files_modified": [],
@@ -135,7 +133,7 @@ output, generated_files, files_modified, commands_run, and errors.""",
 
         result = {
             "success": len(total_errors) == 0,
-            "execution_mode": self.claw.execution_mode,
+            "execution_mode": self.execution_mode,
             "builder_reports": reports,
             "generated_files": generated_files,
             "files_modified": sorted(set(files_modified)),

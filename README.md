@@ -2,7 +2,7 @@
 
 ### Multi-Agent Orchestration & Swarm Intelligence
 
-> **Python for the Brain. Rust for the Blade.**
+> **Python orchestration with multi-provider LLM agents.**
 
 NexusSentry is a coordinated multi-agent system where **4 specialized AI agents** communicate like a real engineering team to solve complex, multi-step coding tasks — with human oversight, security scanning, and real-time observability.
 
@@ -23,7 +23,7 @@ Instead of asking one AI to do everything (and getting mediocre results), NexusS
 | ---------------------- | ----------------- | --------------------------------------------------------------------- | ---------------- |
 | 🔍 **Scout**           | Task Decomposer   | Breaks a high-level goal into 3-5 actionable sub-tasks                | 💎 Gemini        |
 | 🏗️ **Architect**       | Technical Planner | Creates a precise execution plan for each sub-task                    | 🌐 OpenRouter    |
-| 🔧 **Fixer**           | Executor          | Runs the plan in a Rust-sandboxed environment (Claw Code)             | Auto             |
+| 🔧 **Fixer**           | Executor          | Runs the plan via the Builder (in-process LLM code generation)        | Auto             |
 | 📋 **Critic**          | Quality Gate      | Reviews output — approves, rejects (with feedback loop), or escalates | 🧠 Grok          |
 | 🛡️ **Guardian**        | Security Scanner  | 7-layer threat detection (prompt injection, PII, XSS, etc.)           | 💎 Gemini        |
 | 👤 **User Permission** | Retry Gate        | Asks user whether to retry once or return current output              | —                |
@@ -72,11 +72,6 @@ graph TB
         Critic["📋 Critic<br/>Quality Gate"]
     end
 
-    subgraph ExecutionLayer["🦀 Execution Layer"]
-        ClawBridge["Claw Bridge<br/>Python ↔ Rust"]
-        RustSandbox["Rust Sandbox<br/>Safe Execution"]
-    end
-
     subgraph Observability["📊 Observability"]
         Tracer["Agent Tracer<br/>JSONL Logs"]
         Dashboard["Web Dashboard<br/>Real-Time UI"]
@@ -89,10 +84,7 @@ graph TB
     Guardian -->|"blocked 🚫"| User
     Scout -->|"sub-tasks"| Architect
     Architect -->|"plan"| Fixer
-    Fixer -->|"delegates"| ClawBridge
-    ClawBridge -->|"executes"| RustSandbox
-    RustSandbox -->|"result"| Fixer
-    Fixer -->|"output"| Critic
+    Fixer -->|"generated code"| Critic
     Critic -->|"approve ✅"| User
     Critic -->|"reject ❌"| Architect
     Critic -->|"needs decision"| Permission
@@ -112,7 +104,6 @@ graph TB
     style ProviderLayer fill:#1a1030,stroke:#a855f7,stroke-width:2px
     style SecurityLayer fill:#0d2818,stroke:#10b981,stroke-width:2px
     style AgentSwarm fill:#1a1040,stroke:#6366f1,stroke-width:2px
-    style ExecutionLayer fill:#2d1810,stroke:#f59e0b,stroke-width:2px
     style Observability fill:#101830,stroke:#06b6d4,stroke-width:2px
 ```
 
@@ -128,7 +119,6 @@ sequenceDiagram
     participant P as 🤖 Provider
     participant A as 🏗️ Architect
     participant F as 🔧 Fixer
-    participant R as 🦀 Rust Sandbox
     participant C as 📋 Critic
     participant H as 👤 User Permission
 
@@ -149,8 +139,7 @@ sequenceDiagram
         A->>P: Plan (via OpenRouter)
         P-->>A: Execution plan
         A->>F: Send plan
-        F->>R: Execute in sandbox
-        R-->>F: Result + diff
+        F->>F: Generate code (LLM builders)
         F->>C: Submit for review
         C->>P: Review (via Grok)
         P-->>C: Verdict
@@ -331,9 +320,7 @@ DevMatrix/
 │   ├── providers/               # 🔀 NEW — Multi-LLM provider layer
 │   │   ├── __init__.py
 │   │   └── llm_provider.py      # Gemini/Grok/OpenRouter/Anthropic router
-│   ├── adapters/
-│   │   ├── claw_bridge.py       # 🦀 Python ↔ Rust bridge
-│   │   └── nexus_backend.py     # NexusSentry backend integration
+│   ├── adapters/                # Optional external integration hooks
 │   ├── agents/
 │   │   ├── scout.py             # 🔍 Task decomposition (→ Gemini)
 │   │   ├── architect.py         # 🏗️ Technical planning (→ OpenRouter)
@@ -383,9 +370,8 @@ docker run --env-file .env -p 7777:7777 nexussentry
 4. **Response Caching** — MD5-keyed disk cache prevents demo failures from API outages
 5. **Real-Time Dashboard** — Zero-dependency HTTP server with glassmorphism UI
 6. **User Permission Gate** — local y/n decision for retry or returning current output
-7. **Rust Sandbox Bridge** — Python orchestrates, Rust executes (via Claw Code)
-8. **Graceful Degradation** — Every component has fallback behavior; nothing crashes
-9. **Mock Mode** — Full demo works even with zero API keys configured
+7. **Graceful Degradation** — Every component has fallback behavior; nothing crashes
+8. **Mock Mode** — Full demo works even with zero API keys configured
 
 ---
 
@@ -403,6 +389,6 @@ MIT
 ---
 
 <p align="center">
-  <b>Python for the Brain. Rust for the Blade.</b><br/>
+  <b>Python orchestration · multi-provider LLM agents</b><br/>
   <sub>NexusSentry v2.0 — Multi-Agent Orchestration & Swarm Intelligence</sub>
 </p>

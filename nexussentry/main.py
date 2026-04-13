@@ -3,7 +3,7 @@
 ╔═══════════════════════════════════════════════════════════╗
 ║           NexusSentry v3.0 — Swarm Orchestrator           ║
 ║                                                           ║
-║  Python for the Brain. Rust for the Blade.                ║
+║  Python orchestration · multi-provider LLM agents         ║
 ║                                                           ║
 ║  Coordinates specialized AI agents + MoA critic panel     ║
 ║  + constitutional safety + real-time WebSocket dashboard. ║
@@ -79,7 +79,7 @@ def print_banner():
 ║   ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝            ║
 ║              \033[96mSENTRY\033[95m                                        ║
 ║                                                           ║
-║   \033[93mPython for the Brain. Rust for the Blade.\033[95m               ║
+║   \033[93mPython orchestration · multi-provider LLM agents\033[95m          ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝\033[0m
     """
@@ -151,8 +151,8 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     print(f"     entrypoint={goal_contract.preferred_entrypoint}")
     print(f"  📂 Run output: {run_output_dir}")
 
-    # ── Determine execution mode from Claw bridge ──
-    exec_mode = builder.claw.execution_mode
+    # ── Execution path (in-process builder / LLM generation) ──
+    exec_mode = builder.execution_mode
     exec_badge = f"[{exec_mode.upper()}]"
     print(f"  ⚡ Execution Mode: {exec_badge}")
 
@@ -665,7 +665,7 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     print(f"       💾 Files → {r['saved_to']}")
 
         print(f"  {'═' * 56}")
-        print(f"\n  \033[95m✨ NexusSentry v3.0 — Python for the Brain. Rust for the Blade. ✨\033[0m\n")
+        print(f"\n  \033[95m✨ NexusSentry v3.0 — Python orchestration · multi-provider LLM agents ✨\033[0m\n")
     original_provider_concurrency = None
     if hasattr(provider, "get_max_concurrency"):
         original_provider_concurrency = provider.get_max_concurrency()

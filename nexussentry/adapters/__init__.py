@@ -1,1 +1,1 @@
-"""Adapters — Bridge layer connecting NexusSentry (Python) to Claw Code (Rust)."""
+"""Adapters — optional integration hooks for external backends (reserved)."""

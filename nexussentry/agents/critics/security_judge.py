@@ -20,5 +20,5 @@ Evaluation rubric:
 
 A SINGLE critical vulnerability = score of 0. No exceptions.
 If no security-sensitive code is present, score 90 and approve.
-IMPORTANT: If execution_mode is "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
+IMPORTANT: If execution_mode is "python" or "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
 Respond ONLY with the JSON format requested."""

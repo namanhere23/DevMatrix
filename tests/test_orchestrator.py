@@ -163,20 +163,7 @@ class TestExecutionMode:
     def test_builder_reports_execution_mode(self):
         """BuilderAgent should include execution_mode information."""
         builder = BuilderAgent()
-        # Without real Claw binary, mode should be simulated
-        assert builder.claw.execution_mode in ("real", "simulated")
-
-    def test_claw_bridge_simulated_mode_no_fake_files(self):
-        """Simulated results should NOT contain fake file paths."""
-        from nexussentry.adapters.claw_bridge import ClawBridge
-
-        bridge = ClawBridge()
-        if not bridge.claw_available:
-            result = bridge._simulated_run("test task", 0.5)
-            assert result["execution_mode"] == "simulated"
-            assert result["files_modified"] == []
-            assert result["commands_run"] == []
-            assert "[SIMULATED]" in result["output"]
+        assert builder.execution_mode == "python"
 
 
 class TestBuilderPipeline:
@@ -307,8 +294,7 @@ class TestDependencyWaveScheduler:
                 }
 
         class FakeBuilder:
-            def __init__(self):
-                self.claw = SimpleNamespace(execution_mode="simulated")
+            execution_mode = "python"
 
             def build(self, plan, *_args, **_kwargs):
                 task_name = plan["plan_summary"]
@@ -319,7 +305,7 @@ class TestDependencyWaveScheduler:
                 state["build_ends"][task_name] = time.perf_counter()
                 return {
                     "success": True,
-                    "execution_mode": "simulated",
+                    "execution_mode": "python",
                     "builder_reports": [{"builder_id": "builder-1", "status": "ok"}],
                     "generated_files": {f"{task_name}.py": f"print('{task_name}')"},
                     "saved_to": "",
@@ -333,7 +319,7 @@ class TestDependencyWaveScheduler:
                 return {
                     "integrator_summary": "integrated",
                     "generated_files": builder_result.get("generated_files", {}),
-                    "execution_mode": builder_result.get("execution_mode", "simulated"),
+                    "execution_mode": builder_result.get("execution_mode", "python"),
                     "saved_to": "",
                 }
 

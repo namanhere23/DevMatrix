@@ -19,5 +19,5 @@ Evaluation rubric:
 - Reversible (can be cleanly rolled back): 0-25 points
 
 Score < 70 = reject. "It works but it's a mess" is a reject.
-IMPORTANT: If execution_mode is "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
+IMPORTANT: If execution_mode is "python" or "simulated", that is NORMAL. Judge the code LOGIC, not physical file changes.
 Respond ONLY with the JSON format requested."""

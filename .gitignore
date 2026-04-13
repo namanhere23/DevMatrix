@@ -35,9 +35,6 @@ package-lock.json
 frontend/node_modules/
 frontend/dist/
 
-# Rust build artifacts
-claw-code/rust/target/
-
 # OS files
 .DS_Store
 Thumbs.db
