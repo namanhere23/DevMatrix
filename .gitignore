@@ -30,6 +30,10 @@ ENV/
 .demo_cache/
 *.jsonl
 
+# Frontend (React/Vite)
+frontend/node_modules/
+frontend/dist/
+
 # Rust build artifacts
 claw-code/rust/target/
 

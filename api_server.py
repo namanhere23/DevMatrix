@@ -143,13 +143,25 @@ class QueueLoggingHandler(logging.Handler):
 
 # ── API Endpoints ──
 
+# ── Mount static assets from Vite build ──
+_dist_dir = FRONTEND_DIR / "dist"
+_assets_dir = _dist_dir / "assets"
+if _assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="static-assets")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
-    """Serve the frontend HTML."""
+    """Serve the frontend HTML (Vite build output or fallback to raw index.html)."""
+    # Try Vite build output first
+    dist_index = FRONTEND_DIR / "dist" / "index.html"
+    if dist_index.exists():
+        return HTMLResponse(content=dist_index.read_text(encoding="utf-8"))
+    # Fallback to raw index.html (for non-React setups)
     html_path = FRONTEND_DIR / "index.html"
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-    return HTMLResponse(content="<h1>Frontend not found</h1>", status_code=404)
+    return HTMLResponse(content="<h1>Frontend not found. Run 'npm run build' in frontend/</h1>", status_code=404)
 
 
 @app.get("/api/health")
