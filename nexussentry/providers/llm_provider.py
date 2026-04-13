@@ -17,14 +17,18 @@
 
 import json
 import os
+import re
 import sys
 import logging
+import time
 import threading
 from typing import Any, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from langchain_openai import ChatOpenAI
+
+from nexussentry.providers.dynamic_router import DynamicRouter
 
 logger = logging.getLogger("LLMProvider")
 
@@ -51,7 +55,7 @@ PROVIDER_CONFIG = {
     "groq": {
         "env_key": "GROQ_API_KEY",
         "base_url": "https://api.groq.com/openai/v1",
-        "default_model": "groq/compound",
+        "default_model": "llama-3.3-70b-versatile",
         "label": "Groq",
         "icon": "🧠",
     },
@@ -101,8 +105,24 @@ class LLMProvider:
         self._mock_call_counts = {}  # Track mock calls per agent for smart responses
         self._disabled_providers: set[str] = set()
         self._provider_failures: dict[str, int] = {}
-        max_concurrency = max(1, int(os.getenv("NEXUS_LLM_MAX_CONCURRENCY", "2")))
+        self._provider_failure_log: list[dict] = []  # Detailed failure log for manifest
+        max_concurrency = max(1, int(os.getenv("NEXUS_LLM_MAX_CONCURRENCY", "4")))
+        self._max_concurrency = max_concurrency
         self._request_gate = threading.BoundedSemaphore(value=max_concurrency)
+
+        # v3.0: Dynamic router for cost-aware, latency-intelligent routing
+        self._dynamic_router = DynamicRouter()
+        self._total_estimated_cost = 0.0
+
+    def set_max_concurrency(self, value: int) -> None:
+        """Resize the global LLM request gate (e.g. serialized single-file runs use 1)."""
+        n = max(1, int(value))
+        self._max_concurrency = n
+        self._request_gate = threading.BoundedSemaphore(value=n)
+
+    def get_max_concurrency(self) -> int:
+        """Return the configured request-gate size."""
+        return self._max_concurrency
 
     def _detect_providers(self):
         """Scan .env for available API keys."""
@@ -138,8 +158,24 @@ class LLMProvider:
         """True if no providers are available."""
         return len(self._available) == 0
 
-    def get_provider_for_agent(self, agent_name: str) -> str:
-        """Get the best provider for a specific agent role."""
+    def get_provider_for_agent(self, agent_name: str,
+                                task_complexity: str = "medium",
+                                security_sensitive: bool = False) -> str:
+        """Get the best provider for a specific agent role using dynamic routing."""
+        try:
+            selected = self._dynamic_router.select_provider(
+                agent_name=agent_name,
+                available_providers=self.available_providers,
+                disabled_providers=self._disabled_providers,
+                task_complexity=task_complexity,
+                security_sensitive=security_sensitive,
+            )
+            # Safety net: verify the router returned a valid provider
+            if selected and (selected in self._available or selected == "mock"):
+                return selected
+        except Exception:
+            pass
+        # Fallback to static resolution if dynamic router fails or returns invalid
         preferred = AGENT_PREFERENCES.get(agent_name.lower(), "auto")
         return self._resolve_provider(preferred)
 
@@ -189,25 +225,56 @@ class LLMProvider:
         label = config.get("label", provider)
         logger.info(f"  {icon} LLM call #{self._call_count} → {label}")
 
-        # Route to correct provider
+        # Route to correct provider with latency tracking
+        call_start = time.time()
         try:
-            if provider != "mock":
-                with self._request_gate:
-                    return self._call_with_langchain(provider, system, user_msg, max_tokens)
-
-            if provider == "gemini":
-                return self._call_gemini(system, user_msg, max_tokens)
-            elif provider == "groq":
-                return self._call_groq(system, user_msg, max_tokens)
-            elif provider == "openrouter":
-                return self._call_openrouter(system, user_msg, max_tokens)
-            elif provider == "huggingface":
-                return self._call_huggingface(system, user_msg, max_tokens)
-            else:
+            if provider == "mock":
                 return self._mock_response(system, user_msg, agent_name=agent_name)
+
+            with self._request_gate:
+                result = self._call_with_langchain(provider, system, user_msg, max_tokens)
+
+            # v3.0: Record outcome for dynamic routing
+            latency_ms = (time.time() - call_start) * 1000
+            estimated_tokens = len(user_msg.split()) + len(result.split())
+            self._dynamic_router.record_outcome(
+                provider=provider,
+                latency_ms=latency_ms,
+                tokens_used=estimated_tokens,
+            )
+            # Track cost
+            cost_per_1k = DynamicRouter.PROVIDER_COSTS.get(provider, 0.001)
+            self._total_estimated_cost += (estimated_tokens / 1000.0) * cost_per_1k
+
+            return result
         except Exception as e:
+            err_msg = str(e).lower()
+            self._provider_failure_log.append({
+                "provider": provider,
+                "error": str(e)[:200],
+                "agent": agent_name,
+            })
+
+            # v3.0: Record error for dynamic routing
+            latency_ms = (time.time() - call_start) * 1000
+            self._dynamic_router.record_outcome(
+                provider=provider,
+                latency_ms=latency_ms,
+                error=True,
+            )
+
             logger.warning(f"  ⚠️  {label} failed: {e}. Trying fallback...")
             self._maybe_disable_provider(provider, e)
+
+            # HTTP 413: prompt too large — retry with compressed context
+            if "413" in err_msg or "payload too large" in err_msg:
+                logger.info("  📦 Retrying with compressed context (50% truncation)...")
+                truncated_msg = user_msg[:len(user_msg) // 2] + "\n[CONTEXT TRUNCATED]"
+                try:
+                    return self._fallback_chat(system, truncated_msg, max_tokens, exclude=provider)
+                except Exception:
+                    pass
+
             return self._fallback_chat(system, user_msg, max_tokens, exclude=provider)
 
     def _fallback_chat(self, system: str, user_msg: str,
@@ -273,6 +340,7 @@ class LLMProvider:
                 google_api_key=api_key,
                 temperature=0.7,
                 max_output_tokens=max_tokens,
+                max_retries=0,  # Fast fail for DynamicRouter
             )
         elif provider == "huggingface":
             if not os.getenv("HUGGINGFACEHUB_API_TOKEN"):
@@ -304,13 +372,32 @@ class LLMProvider:
         msg = str(err).lower()
         self._provider_failures[provider] = self._provider_failures.get(provider, 0) + 1
 
-        is_rate_hard_limit = (
-            "tokens per day" in msg
+        is_resource_exhausted = (
+            "resource_exhausted" in msg
+            or "resource exhausted" in msg
+            or "quota" in msg
+            or "tokens per day" in msg
             or "tpd" in msg
-            or "requests per minute" in msg
+        )
+        is_rate_hard_limit = (
+            "requests per minute" in msg
             or "rpm" in msg
             or "rate_limit_exceeded" in msg
+            or "rate limit exceeded" in msg
         )
+        has_long_retry = False
+        retry_match = re.search(r'retry[\s_-]*after[:\s]*(\d+)', msg)
+        if retry_match:
+            retry_secs = int(retry_match.group(1))
+            if retry_secs > 10:
+                has_long_retry = True
+
+        # Immediate disable for resource exhaustion or long retry windows
+        is_immediate_disable = (
+            is_resource_exhausted
+            or has_long_retry
+        )
+
         is_fatal = (
             "402" in msg
             or "payment required" in msg
@@ -318,11 +405,13 @@ class LLMProvider:
             or "unauthorized" in msg
             or "invalid api key" in msg
             or "insufficient" in msg
-            or (is_rate_hard_limit and self._provider_failures.get(provider, 0) >= 3)
+            or is_immediate_disable
+            or (is_rate_hard_limit and self._provider_failures.get(provider, 0) >= 2)
         )
         if is_fatal and provider in self._available and provider not in self._disabled_providers:
             self._disabled_providers.add(provider)
-            logger.warning(f"  ⛔ Disabling provider '{provider}' for this run due to hard failure.")
+            reason = "resource exhaustion" if is_resource_exhausted else "hard failure"
+            logger.warning(f"  ⛔ Disabling provider '{provider}' for this run ({reason}).")
 
     def _call_gemini(self, system: str, user_msg: str, max_tokens: int) -> str:
         """Call Google Gemini API via REST."""
@@ -522,6 +611,25 @@ class LLMProvider:
         elif "security" in system_lower or "scanner" in system_lower:
             return json.dumps({"safe": True})
 
+        elif "builder" in agent_key.lower() or "builder role" in system_lower:
+            mock_html = "<!DOCTYPE html>\n<html>\n<head><style>body{color:black;}</style></head>\n<body><div id='app'>Mock</div><script>var e = document.getElementById('app');</script></body>\n</html>"
+            return json.dumps({
+                "builder_name": "builder-1",
+                "output": "Mock build successful",
+                "generated_files": {
+                    "index.html": mock_html
+                },
+                "files_modified": ["index.html"],
+                "commands_run": [],
+                "errors": []
+            })
+            
+        elif "generate" in system_lower:
+            mock_html = "<!DOCTYPE html>\n<html>\n<head><style>body{color:black;}</style></head>\n<body><div id='app'>Mock</div><script>var e = document.getElementById('app');</script></body>\n</html>"
+            if "html" in user_msg.lower():
+                return f"```html\n{mock_html}\n```"
+            return "```python\nprint('mock')\n```"
+
         else:
             return json.dumps({
                 "success": True,
@@ -540,6 +648,11 @@ class LLMProvider:
             "providers_available": self.available_providers,
             "provider_usage": self._provider_usage.copy(),
             "mock_mode": self.mock_mode,
+            "disabled_providers": sorted(self._disabled_providers),
+            "failure_log": list(self._provider_failure_log),
+            # v3.0: Dynamic router metrics
+            "router_stats": self._dynamic_router.get_provider_stats(),
+            "estimated_session_cost": f"${self._total_estimated_cost:.4f}",
         }
 
     def provider_summary_str(self) -> str:
@@ -578,3 +691,9 @@ def get_provider() -> LLMProvider:
     if _global_provider is None:
         _global_provider = LLMProvider()
     return _global_provider
+
+
+def reset_provider() -> None:
+    """Reset the global provider singleton (for test isolation)."""
+    global _global_provider
+    _global_provider = None

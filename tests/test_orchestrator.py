@@ -205,6 +205,16 @@ class TestBuilderPipeline:
             "_generate_code_files",
             lambda plan, provider: {"app.py": "print('ok')"},
         )
+        monkeypatch.setattr(
+            builder,
+            "_parse_json_response",
+            lambda raw: {
+                "generated_files": {},
+                "files_modified": [],
+                "commands_run": [],
+                "errors": []
+            }
+        )
 
         builder_result = builder.build({
             "plan_summary": "Build a small app",
@@ -251,11 +261,12 @@ class TestDependencyWaveScheduler:
         class FakeTracer:
             def __init__(self):
                 self.events = []
+                self.session_id = "test_session"
 
             def log(self, agent, event, payload):
                 self.events.append((agent, event, payload))
 
-            def record_task_status(self, *args, **kwargs):
+            def record_task_status(self, *_args, **_kwargs):
                 return None
 
             def mark_complete(self):
@@ -315,6 +326,9 @@ class TestDependencyWaveScheduler:
                 }
 
         class FakeIntegrator:
+            def __init__(self, run_context=None):
+                self.run_context = run_context
+                
             def integrate(self, _plan, builder_result, *_args, **_kwargs):
                 return {
                     "integrator_summary": "integrated",
@@ -322,6 +336,15 @@ class TestDependencyWaveScheduler:
                     "execution_mode": builder_result.get("execution_mode", "simulated"),
                     "saved_to": "",
                 }
+
+            def promote_to_final(self, *_args, **_kwargs):
+                return None
+
+            def save_snapshot(self, *_args, **_kwargs):
+                return []
+
+            def write_manifest(self, *_args, **_kwargs):
+                return None
 
         class FakeQA:
             def verify(self, *_args, **_kwargs):
@@ -382,8 +405,10 @@ class TestDependencyWaveScheduler:
                 return {"hit_rate": "0%"}
 
         class FakeProvider:
-            available_providers = ["mock"]
-            mock_mode = True
+            def __init__(self):
+                self.available_providers = ["mock"]
+                self.mock_mode = True
+                self.max_concurrency = 4
 
             def provider_summary_str(self):
                 return "mock"
@@ -391,8 +416,110 @@ class TestDependencyWaveScheduler:
             def agent_routing_str(self):
                 return "all -> mock"
 
+            def set_max_concurrency(self, value, *_args, **_kwargs):
+                self.max_concurrency = value
+
+            def get_max_concurrency(self):
+                return self.max_concurrency
+
             def stats(self):
                 return {"total_calls": 0, "provider_usage": {"mock": 0}}
+
+        # v3.0 stubs
+        class FakeConstitutionalGuard:
+            def check_output(self, *_args, **_kwargs):
+                return SimpleNamespace(safe=True, description="")
+
+            def stats(self):
+                return {"checks_performed": 0, "violations_caught": 0}
+
+        class FakeBehavioralGuardrail:
+            def audit_swarm_run(self, *_args, **_kwargs):
+                return []
+
+        class FakeFeedbackStore:
+            def record_rejection(self, *_args, **_kwargs):
+                return None
+
+            def get_rejection_stats(self):
+                return {"total_rejections": 0}
+
+        class FakeSessionMemory:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def get_or_create_task_memory(self, *_args, **_kwargs):
+                return SimpleNamespace(
+                    record_plan=lambda *a, **k: None,
+                    record_output=lambda *a, **k: None,
+                    record_verdict=lambda *a, **k: None,
+                )
+
+        class FakeBlackboard:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def post(self, *_args, **_kwargs):
+                return None
+
+            def summary(self):
+                return {"total_keys": 0, "total_writes": 0}
+
+        class FakeWatchdog:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def check(self):
+                return None
+
+            def set_total_tasks(self, *_args):
+                return None
+
+            def record_task_complete(self):
+                return None
+
+            def summary(self):
+                return {"elapsed_s": 0, "max_wall_time_s": 300}
+
+        class FakeEpisodicMemory:
+            def store_episode(self, *_args, **_kwargs):
+                return None
+
+            def stats(self):
+                return {"available": False, "episode_count": 0}
+
+        class FakeCostTracker:
+            def print_summary(self):
+                return None
+
+        def fake_derive_goal_contract(user_goal):
+            return SimpleNamespace(
+                single_file="single file" in user_goal.lower() or "html" in user_goal.lower(),
+                allowed_output_files=["index.html"] if "html" in user_goal.lower() else [],
+                requires_inline_assets="html" in user_goal.lower(),
+                allow_sidecar_assets=False,
+                parallelism_mode="serialized" if "single file" in user_goal.lower() else "parallel",
+                preferred_entrypoint="index.html" if "html" in user_goal.lower() else None,
+                to_dict=lambda: {},
+                fingerprint=lambda: "test",
+            )
+
+        def fake_run_context_init(self, run_id, run_output_dir, goal_contract):
+            self.run_id = run_id
+            self.run_output_dir = run_output_dir
+            self.goal_contract = goal_contract
+            self.final_artifact_dir = run_output_dir / "final"
+            self.attempts_dir = run_output_dir / "attempts"
+            self.attempt_index_by_task = {}
+
+            def get_attempt_dir(task_id):
+                idx = self.attempt_index_by_task.get(task_id, 0) + 1
+                self.attempt_index_by_task[task_id] = idx
+                d = self.attempts_dir / f"task_{task_id}" / f"attempt_{idx}"
+                d.mkdir(parents=True, exist_ok=True)
+                return d
+
+            self.get_attempt_dir = get_attempt_dir
 
         monkeypatch.setattr(orchestrator, "AgentTracer", FakeTracer)
         monkeypatch.setattr(orchestrator, "GuardianAI", FakeGuardian)
@@ -402,11 +529,25 @@ class TestDependencyWaveScheduler:
         monkeypatch.setattr(orchestrator, "IntegratorAgent", FakeIntegrator)
         monkeypatch.setattr(orchestrator, "QAVerifierAgent", FakeQA)
         monkeypatch.setattr(orchestrator, "CriticAgent", FakeCritic)
+        monkeypatch.setattr(orchestrator, "CriticPanel", FakeCritic)
         monkeypatch.setattr(orchestrator, "UserPermissionGate", FakePermissionGate)
         monkeypatch.setattr(orchestrator, "SwarmMemory", FakeMemory)
         monkeypatch.setattr(orchestrator, "get_cache", lambda: FakeCache())
-        monkeypatch.setattr(orchestrator, "get_provider", lambda: FakeProvider())
+        provider = FakeProvider()
+        state["provider"] = provider
+        monkeypatch.setattr(orchestrator, "get_provider", lambda: provider)
         monkeypatch.setattr(orchestrator, "print_banner", lambda: None)
+        # v3.0 stubs
+        monkeypatch.setattr(orchestrator, "ConstitutionalGuard", FakeConstitutionalGuard)
+        monkeypatch.setattr(orchestrator, "BehavioralGuardrail", FakeBehavioralGuardrail)
+        monkeypatch.setattr(orchestrator, "SwarmFeedbackStore", FakeFeedbackStore)
+        monkeypatch.setattr(orchestrator, "SwarmSessionMemory", FakeSessionMemory)
+        monkeypatch.setattr(orchestrator, "SwarmBlackboard", FakeBlackboard)
+        monkeypatch.setattr(orchestrator, "SwarmWatchdog", FakeWatchdog)
+        monkeypatch.setattr(orchestrator, "EpisodicMemory", FakeEpisodicMemory)
+        monkeypatch.setattr(orchestrator, "CostTracker", FakeCostTracker)
+        monkeypatch.setattr(orchestrator, "derive_goal_contract", fake_derive_goal_contract)
+        monkeypatch.setattr(orchestrator, "start_dashboard", lambda *a, **k: None)
 
         return orchestrator, state
 
@@ -474,11 +615,67 @@ class TestDependencyWaveScheduler:
                     "issues_found": ["critical QA failure"],
                     "suggestions": ["fix issue"],
                 }
-            ],
+            ] * 3,  # Fail repeatedly to trigger skip
         )
 
         results = asyncio.run(orchestrator.run_swarm("test", enable_dashboard=False, slow=False))
-        status_by_id = {item["task_id"]: item["status"] for item in results}
 
-        assert status_by_id[1] == "failed"
-        assert status_by_id[2] == "skipped"
+        assert results[0]["status"] == "partial_output"
+        assert results[1]["status"] == "skipped"
+
+    def test_serialized_mode_no_parallel_execution(self, monkeypatch):
+        """In serialized mode, tasks should run strictly one after another."""
+        sub_tasks = [
+            {"id": 1, "task": "A", "priority": "high", "depends_on": []},
+            {"id": 2, "task": "B", "priority": "high", "depends_on": []},
+        ]
+        orchestrator, state = self._install_swarm_stubs(
+            monkeypatch,
+            sub_tasks=sub_tasks,
+            qa_verdicts=[{"passed": True}, {"passed": True}],
+        )
+
+        results = asyncio.run(orchestrator.run_swarm("single file HTML", enable_dashboard=False, slow=False))
+        
+        # In serialized mode, B must start after A finishes even though they have no dependencies
+        assert state["build_starts"]["B"] >= state["build_ends"]["A"]
+
+    def test_serialized_mode_restores_provider_concurrency(self, monkeypatch):
+        """A serialized run should not leave the shared provider throttled afterward."""
+        sub_tasks = [
+            {"id": 1, "task": "A", "priority": "high", "depends_on": []},
+        ]
+        orchestrator, state = self._install_swarm_stubs(
+            monkeypatch,
+            sub_tasks=sub_tasks,
+            qa_verdicts=[{"passed": True}],
+        )
+
+        assert state["provider"].get_max_concurrency() == 4
+        asyncio.run(orchestrator.run_swarm("single file HTML", enable_dashboard=False, slow=False))
+        assert state["provider"].get_max_concurrency() == 4
+        
+    def test_one_run_one_output_dir(self, monkeypatch):
+        """A run should canonicalize output and have manifest.json"""
+        sub_tasks = [
+            {"id": 1, "task": "A", "priority": "high", "depends_on": []},
+        ]
+        orchestrator, state = self._install_swarm_stubs(
+            monkeypatch,
+            sub_tasks=sub_tasks,
+            qa_verdicts=[{"passed": True}],
+        )
+
+        # Replace write_manifest to check context
+        manifest_called = [False]
+        def fake_write_manifest(self, *args, **kwargs):
+            manifest_called[0] = True
+            assert self.run_context is not None
+            assert self.run_context.run_output_dir.name.startswith("session_")
+            assert self.run_context.final_artifact_dir.name == "final"
+            assert self.run_context.attempts_dir.name == "attempts"
+            
+        monkeypatch.setattr(orchestrator.IntegratorAgent, "write_manifest", fake_write_manifest)
+        
+        results = asyncio.run(orchestrator.run_swarm("test run dir", enable_dashboard=False, slow=False))
+        assert manifest_called[0] is True

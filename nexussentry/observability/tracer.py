@@ -62,6 +62,17 @@ class AgentTracer:
         # Per-task status tracking
         self.task_statuses: list[dict] = []
 
+        # v3.0: Cost tracking
+        self.PROVIDER_COST_PER_1K = {
+            "gemini": 0.0004,
+            "groq": 0.0008,
+            "openrouter": 0.003,
+            "huggingface": 0.0002,
+            "mock": 0.0,
+        }
+        self.total_estimated_cost = 0.0
+        self.cost_by_provider: dict[str, float] = {}
+
     def log(self, agent: str, action: str, data: dict = {}):
         """Log an agent event — thread-safe."""
         event = {
@@ -187,4 +198,15 @@ class AgentTracer:
                 "provider_calls": self.provider_calls.copy(),
                 "execution_mode": self.execution_mode,
                 "task_statuses": list(self.task_statuses),
+                # v3.0: Cost tracking
+                "estimated_cost": f"${self.total_estimated_cost:.4f}",
+                "cost_by_provider": dict(self.cost_by_provider),
             }
+
+    def track_cost(self, provider: str, estimated_tokens: int = 0):
+        """Track estimated cost for a provider call."""
+        cost_per_1k = self.PROVIDER_COST_PER_1K.get(provider, 0.001)
+        cost = (estimated_tokens / 1000.0) * cost_per_1k
+        with self._lock:
+            self.total_estimated_cost += cost
+            self.cost_by_provider[provider] = self.cost_by_provider.get(provider, 0.0) + cost

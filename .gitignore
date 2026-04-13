@@ -43,3 +43,6 @@ desktop.ini
 
 GUIDE.md
 output
+
+# Temporary output files
+diff.txt
