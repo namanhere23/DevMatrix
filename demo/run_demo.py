@@ -133,6 +133,64 @@ def run_health_check():
     except Exception as e:
         checks.append(("User Permission", False, str(e)))
 
+    # ─── v3.0 Component Checks ───
+    # Check 11: Critic Panel (MoA Debate)
+    try:
+        from nexussentry.agents.critic_panel import CriticPanel
+        panel = CriticPanel()
+        checks.append(("Critic Panel (MoA)", True, "3-judge debate panel"))
+    except Exception as e:
+        checks.append(("Critic Panel (MoA)", False, str(e)))
+
+    # Check 12: Constitutional Guard
+    try:
+        from nexussentry.security.constitutional_guard import ConstitutionalGuard
+        cg = ConstitutionalGuard()
+        checks.append(("Constitutional AI", True, f"{len(cg.CONSTITUTION)} principles"))
+    except Exception as e:
+        checks.append(("Constitutional AI", False, str(e)))
+
+    # Check 13: Dynamic Router
+    try:
+        from nexussentry.providers.dynamic_router import DynamicRouter
+        dr = DynamicRouter()
+        checks.append(("Dynamic Router", True, f"{len(dr.PROVIDER_COSTS)} providers tracked"))
+    except Exception as e:
+        checks.append(("Dynamic Router", False, str(e)))
+
+    # Check 14: Agent Factory
+    try:
+        from nexussentry.factory.agent_factory import AgentFactory
+        af = AgentFactory()
+        checks.append(("Agent Factory", True, "dynamic pipeline assembly"))
+    except Exception as e:
+        checks.append(("Agent Factory", False, str(e)))
+
+    # Check 15: Swarm Watchdog
+    try:
+        from nexussentry.utils.watchdog import SwarmWatchdog
+        wd = SwarmWatchdog(max_wall_time_seconds=300)
+        checks.append(("Swarm Watchdog", True, f"{wd.max_wall_time_seconds}s max wall time"))
+    except Exception as e:
+        checks.append(("Swarm Watchdog", False, str(e)))
+
+    # Check 16: Feedback Store
+    try:
+        from nexussentry.memory.feedback_store import SwarmFeedbackStore
+        fs = SwarmFeedbackStore()
+        stats = fs.get_rejection_stats()
+        checks.append(("Feedback Store", True, f"{stats.get('total_rejections', 0)} rejections stored"))
+    except Exception as e:
+        checks.append(("Feedback Store", False, str(e)))
+
+    # Check 17: Blackboard
+    try:
+        from nexussentry.communication.blackboard import SwarmBlackboard
+        bb = SwarmBlackboard()
+        checks.append(("Swarm Blackboard", True, "inter-agent communication"))
+    except Exception as e:
+        checks.append(("Swarm Blackboard", False, str(e)))
+
     # Print results
     all_ok = True
     for name, ok, detail in checks:
@@ -216,6 +274,22 @@ def _print_readiness_report():
         badge = "🟠 FULL DEMO MODE (simulated + mock)"
 
     print(f"\n   {badge}")
+
+    # v3.0: Print new components summary
+    print(f"\n  🆕 v3.0 Components:")
+    v3_components = [
+        "MoA Critic Panel (3-judge debate)",
+        "Constitutional AI Safety",
+        "Dynamic Cost-Aware Routing",
+        "Agent Factory (dynamic spawning)",
+        "Swarm Watchdog (timeout guarantee)",
+        "Behavioral Guardrail",
+        "Feedback Store (RLAIF loop)",
+        "Blackboard Architecture",
+    ]
+    for comp in v3_components:
+        print(f"     ✨ {comp}")
+
     print(f"  {'═' * 50}")
 
 

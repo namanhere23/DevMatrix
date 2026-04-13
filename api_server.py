@@ -289,9 +289,14 @@ async def run_swarm_endpoint(request: RunRequest):
             # Read generated artifacts
             artifacts = {}
             if session_dir:
-                final_dir = session_dir / "final"
-                if final_dir.exists():
-                    for f in final_dir.iterdir():
+                # Try max_output first, fallback to final
+                primary_dir = session_dir / "max_output"
+                fallback_dir = session_dir / "final"
+                
+                target_dir = primary_dir if primary_dir.exists() else fallback_dir
+                
+                if target_dir.exists():
+                    for f in target_dir.iterdir():
                         if f.is_file():
                             try:
                                 artifacts[f.name] = f.read_text(encoding="utf-8")
@@ -394,7 +399,11 @@ async def get_session_manifest(session_id: str):
 @app.get("/api/sessions/{session_id}/artifacts/{filename}")
 async def get_session_artifact(session_id: str, filename: str):
     """Serve a generated artifact file."""
-    file_path = OUTPUT_DIR / session_id / "final" / filename
+    # First try max_output, then final
+    file_path = OUTPUT_DIR / session_id / "max_output" / filename
+    if not file_path.exists():
+        file_path = OUTPUT_DIR / session_id / "final" / filename
+        
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Artifact not found")
 
@@ -444,4 +453,4 @@ if __name__ == "__main__":
     print("  📡 API:      http://localhost:8000")
     print("  🌐 Frontend: http://localhost:8000")
     print("  📋 Docs:     http://localhost:8000/docs\n")
-    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

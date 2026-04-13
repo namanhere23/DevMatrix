@@ -216,7 +216,14 @@ Return only raw source code.""",
 
     def _get_file_type_hints(self, ext: str) -> str:
         if ext == ".html":
-            return "HTML must be standalone with inline CSS and JS, no templates."
+            return (
+                "CRITICAL: HTML must be COMPLETELY STANDALONE.\n"
+                "- ALL CSS must be inside <style> tags in the <head>. Do NOT use <link> to external .css files.\n"
+                "- ALL JavaScript must be inside <script> tags. Do NOT use <script src='...'> to external .js files.\n"
+                "- Do NOT reference any external files (no style.css, no script.js, no images from relative paths).\n"
+                "- The file must be fully functional when opened directly in a browser with no server.\n"
+                "- Include responsive design, modern styling, and proper semantic HTML5."
+            )
         if ext == ".py":
             return "Include imports, complete function bodies, and error handling."
         if ext in {".js", ".ts"}:

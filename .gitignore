@@ -43,6 +43,9 @@ desktop.ini
 
 GUIDE.md
 output
+
+# Temporary output files
+diff.txt
 fullstack_execution_plan_simple.md
 tests/.tmp_api_tests/
 .artifacts/
