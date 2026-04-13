@@ -29,6 +29,7 @@ ENV/
 # NexusSentry specific
 .demo_cache/
 *.jsonl
+package-lock.json
 
 # Frontend (React/Vite)
 frontend/node_modules/
@@ -46,7 +47,7 @@ desktop.ini
 *.log
 
 GUIDE.md
-output
+output/
 
 # Temporary output files
 diff.txt

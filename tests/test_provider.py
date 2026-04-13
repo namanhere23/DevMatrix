@@ -23,3 +23,12 @@ def test_resolve_provider():
     
     # If prefer is unavailable, fallback to auto
     assert provider._resolve_provider("huggingface") == "gemini"
+
+
+def test_huggingface_env_alias_detected(monkeypatch):
+    monkeypatch.setenv("HUGGINGFACE_API_KEY", "")
+    monkeypatch.setenv("HUGGINGFACEHUB_API_TOKEN", "")
+    monkeypatch.setenv("HF_TOKEN", "hf_test_alias_token_1234567890")
+
+    provider = LLMProvider()
+    assert "huggingface" in provider.available_providers

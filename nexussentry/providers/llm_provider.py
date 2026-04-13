@@ -23,6 +23,7 @@ import logging
 import time
 import threading
 from typing import Any, Optional
+from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
@@ -46,28 +47,28 @@ def _safe_print(text: str):
 # ── Provider Configuration ──
 PROVIDER_CONFIG = {
     "gemini": {
-        "env_key": "GEMINI_API_KEY",
+        "env_keys": ["GEMINI_API_KEY"],
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "default_model": "gemini-2.5-flash",
         "label": "Google Gemini",
         "icon": "💎",
     },
     "groq": {
-        "env_key": "GROQ_API_KEY",
+        "env_keys": ["GROQ_API_KEY", "GROK_API_KEY"],
         "base_url": "https://api.groq.com/openai/v1",
         "default_model": "llama-3.3-70b-versatile",
         "label": "Groq",
         "icon": "🧠",
     },
     "openrouter": {
-        "env_key": "OPENROUTER_API_KEY",
+        "env_keys": ["OPENROUTER_API_KEY"],
         "base_url": "https://openrouter.ai/api/v1",
         "default_model": "google/gemini-2.0-flash-001",
         "label": "OpenRouter",
         "icon": "🌐",
     },
     "huggingface": {
-        "env_key": "HUGGINGFACE_API_KEY",
+        "env_keys": ["HUGGINGFACE_API_KEY", "HUGGINGFACEHUB_API_TOKEN", "HF_TOKEN"],
         "base_url": "https://router.huggingface.co/v1",
         "default_model": "Qwen/Qwen2.5-7B-Instruct",
         "label": "Hugging Face",
@@ -102,6 +103,8 @@ class LLMProvider:
         self._detect_providers()
         self._call_count = 0
         self._provider_usage = {}  # Track which provider was used how many times
+        self._last_provider_attempted: Optional[str] = None
+        self._last_provider_successful: Optional[str] = None
         self._mock_call_counts = {}  # Track mock calls per agent for smart responses
         self._disabled_providers: set[str] = set()
         self._provider_failures: dict[str, int] = {}
@@ -126,11 +129,11 @@ class LLMProvider:
 
     def _detect_providers(self):
         """Scan .env for available API keys."""
+        # Load local .env even when provider is imported outside main/api entrypoints.
+        load_dotenv(override=False)
+
         for name, config in PROVIDER_CONFIG.items():
-            key = os.getenv(config["env_key"], "").strip()
-            # Backward compatibility for existing setups.
-            if name == "groq" and not key:
-                key = os.getenv("GROK_API_KEY", "").strip()
+            key = self._read_first_env(config.get("env_keys", []))
             # Filter out placeholder/dummy values
             is_placeholder = (
                 not key
@@ -147,6 +150,14 @@ class LLMProvider:
 
         if not self._available:
             logger.warning("  No LLM API keys found. Running in MOCK mode.")
+
+    def _read_first_env(self, env_keys: list[str]) -> str:
+        """Return first non-empty env var value from aliases."""
+        for env_key in env_keys:
+            value = os.getenv(env_key, "").strip()
+            if value:
+                return value
+        return ""
 
     @property
     def available_providers(self) -> list[str]:
@@ -217,6 +228,9 @@ class LLMProvider:
         else:
             provider = self._resolve_provider(prefer)
 
+        self._last_provider_attempted = provider
+        self._last_provider_successful = None
+
         self._call_count += 1
         self._provider_usage[provider] = self._provider_usage.get(provider, 0) + 1
 
@@ -229,10 +243,12 @@ class LLMProvider:
         call_start = time.time()
         try:
             if provider == "mock":
+                self._last_provider_successful = "mock"
                 return self._mock_response(system, user_msg, agent_name=agent_name)
 
             with self._request_gate:
                 result = self._call_with_langchain(provider, system, user_msg, max_tokens)
+            self._last_provider_successful = provider
 
             # v3.0: Record outcome for dynamic routing
             latency_ms = (time.time() - call_start) * 1000
@@ -285,14 +301,21 @@ class LLMProvider:
                 try:
                     logger.info(f"  🔄 Fallback → {PROVIDER_CONFIG[p]['label']}")
                     with self._request_gate:
-                        return self._call_with_langchain(p, system, user_msg, max_tokens)
+                        result = self._call_with_langchain(p, system, user_msg, max_tokens)
+                    self._last_provider_successful = p
+                    return result
                 except Exception as e:
                     logger.warning(f"  ⚠️  Fallback {p} also failed: {e}")
                     self._maybe_disable_provider(p, e)
                     continue
 
         logger.warning("  ⚠️  All providers failed. Using mock response.")
+        self._last_provider_successful = "mock"
         return self._mock_response(system, user_msg)
+
+    def get_last_provider_used(self) -> str:
+        """Return the last successful provider used for chat() in this instance."""
+        return self._last_provider_successful or "mock"
 
     # ═══════════════════════════════════════════
     # Provider Implementations

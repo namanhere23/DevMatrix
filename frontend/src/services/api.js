@@ -34,6 +34,31 @@ export function getArtifactUrl(sessionId, filename) {
   return `${API_BASE}/api/sessions/${sessionId}/artifacts/${filename}`;
 }
 
+export async function optimizePrompt(prompt) {
+  const resp = await fetch(`${API_BASE}/api/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!resp.ok) {
+    let detail = 'Prompt optimization failed';
+    try {
+      const data = await resp.json();
+      detail = data.detail || detail;
+    } catch {
+      try {
+        detail = await resp.text();
+      } catch {
+        // keep default message
+      }
+    }
+    throw new Error(detail);
+  }
+
+  return resp.json();
+}
+
 /**
  * Execute a swarm run. Returns a function to read SSE events.
  * @param {string} goal

@@ -74,6 +74,10 @@ class RunRequest(BaseModel):
     goal: str
 
 
+class OptimizeRequest(BaseModel):
+    prompt: str
+
+
 class RunStatus(BaseModel):
     run_id: str
     status: str
@@ -362,6 +366,26 @@ async def run_swarm_endpoint(request: RunRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/optimize")
+async def optimize_prompt_endpoint(request: OptimizeRequest):
+    """Optimize a raw user prompt before dispatching it to the swarm."""
+    prompt = request.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+
+    try:
+        from nexussentry.agents.optimizer import OptimizerAgent
+
+        optimizer = OptimizerAgent()
+        result = optimizer.optimize(prompt)
+        return {
+            "status": "ok",
+            "result": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prompt optimization failed: {e}")
 
 
 @app.get("/api/sessions")

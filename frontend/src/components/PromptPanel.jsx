@@ -1,4 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { useToast } from './Toast';
+import * as api from '../services/api';
 
 const PRESETS = [
   'Portfolio website',
@@ -10,7 +12,9 @@ const PRESETS = [
 
 export default function PromptPanel({ onExecute, isRunning }) {
   const [value, setValue] = useState('');
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const textareaRef = useRef(null);
+  const toast = useToast();
 
   const charCount = value.length;
   const isWarn = charCount > 1800;
@@ -37,6 +41,28 @@ export default function PromptPanel({ onExecute, isRunning }) {
     onExecute(goal);
   };
 
+  const handleOptimize = async () => {
+    const prompt = value.trim();
+    if (!prompt || isRunning || isOptimizing) return;
+
+    setIsOptimizing(true);
+    try {
+      const response = await api.optimizePrompt(prompt);
+      const optimized = response?.result?.optimized_prompt || response?.optimized_prompt;
+      if (optimized) {
+        setValue(optimized);
+        textareaRef.current?.focus();
+        toast('success', 'Prompt optimized', 'The refined version is ready to run.');
+      } else {
+        throw new Error('Optimizer returned no optimized prompt');
+      }
+    } catch (error) {
+      toast('error', 'Optimization failed', error.message || 'Could not optimize this prompt');
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
   const usePreset = (text) => {
     setValue(text);
     textareaRef.current?.focus();
@@ -61,15 +87,24 @@ export default function PromptPanel({ onExecute, isRunning }) {
           />
           <span className={`char-count${isWarn ? ' warn' : ''}`}>{charCount} / 2000</span>
         </div>
-        <button
-          className={`btn-execute${isRunning ? ' running' : ''}`}
-          onClick={handleExecute}
-          disabled={isRunning}
-        >
-          <span className="btn-icon">⚡</span>
-          <span className="spinner" />
-          Execute
-        </button>
+        <div className="prompt-action-stack">
+          <button
+            className={`btn-optimize${isOptimizing ? ' running' : ''}`}
+            onClick={handleOptimize}
+            disabled={isRunning || isOptimizing || !value.trim()}
+          >
+            <span className="spinner" />
+            {isOptimizing ? 'Optimizing' : 'Optimize'}
+          </button>
+          <button
+            className={`btn-execute${isRunning ? ' running' : ''}`}
+            onClick={handleExecute}
+            disabled={isRunning}
+          >
+            <span className="spinner" />
+            Execute
+          </button>
+        </div>
       </div>
       <div className="prompt-presets">
         {PRESETS.map((p, i) => (
