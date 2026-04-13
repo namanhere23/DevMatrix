@@ -1,4 +1,6 @@
 # Core dependencies
+fastapi>=0.115.0
+uvicorn>=0.30.0
 python-dotenv
 requests
 langchain-core
@@ -6,4 +8,3 @@ langchain-openai
 langchain-google-genai
 langchain-huggingface
 langgraph
-fastapi

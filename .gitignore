@@ -43,3 +43,6 @@ desktop.ini
 
 GUIDE.md
 output
+fullstack_execution_plan_simple.md
+tests/.tmp_api_tests/
+.artifacts/
