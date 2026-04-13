@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="NexusSentry v3.0 — Multi-Agent AI Orchestration Dashboard">
+    <meta name="description" content="NexusSentry v3.1 — Multi-Agent AI Orchestration Dashboard">
     <title>NexusSentry — AI Agent Command Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet">
     <style>
         /* ═══════════════════════════════════════════════════════
-           DESIGN SYSTEM — NexusSentry Dark Theme
+           DESIGN SYSTEM — NexusSentry Dark Theme v3.1
            ═══════════════════════════════════════════════════════ */
         :root {
             --bg-primary: #0a0a0f;
@@ -56,10 +59,14 @@
             --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
             --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
             --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+            --sidebar-width: 260px;
         }
 
         /* ═══ Reset & Base ═══ */
-        *, *::before, *::after {
+        *,
+        *::before,
+        *::after {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
@@ -73,8 +80,8 @@
             font-family: var(--font-sans);
             background: var(--bg-primary);
             color: var(--text-primary);
-            min-height: 100vh;
-            overflow-x: hidden;
+            height: 100vh;
+            overflow: hidden;
             line-height: 1.6;
         }
 
@@ -115,9 +122,19 @@
         }
 
         @keyframes float-orb {
-            0%, 100% { transform: translate(0, 0) scale(1); }
-            33% { transform: translate(50px, -30px) scale(1.1); }
-            66% { transform: translate(-30px, 50px) scale(0.95); }
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(50px, -30px) scale(1.1);
+            }
+
+            66% {
+                transform: translate(-30px, 50px) scale(0.95);
+            }
         }
 
         /* ═══ Layout ═══ */
@@ -125,10 +142,21 @@
             position: relative;
             z-index: 1;
             display: grid;
-            grid-template-columns: 280px 1fr;
+            grid-template-columns: var(--sidebar-width) 1fr;
             grid-template-rows: auto 1fr;
-            min-height: 100vh;
-            gap: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container.sidebar-collapsed {
+            grid-template-columns: 0px 1fr;
+        }
+
+        .app-container.sidebar-collapsed .sidebar {
+            width: 0;
+            padding: 0;
+            overflow: hidden;
+            border: none;
         }
 
         /* ═══ Header ═══ */
@@ -137,36 +165,66 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 16px 28px;
-            background: var(--bg-secondary);
+            padding: 0 20px;
+            height: 54px;
+            background: rgba(12, 12, 20, 0.92);
             border-bottom: 1px solid var(--border-subtle);
             backdrop-filter: blur(20px);
+            z-index: 100;
         }
 
-        .header-brand {
+        .header-left {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 12px;
+        }
+
+        .sidebar-toggle {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            width: 30px;
+            height: 30px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all var(--transition-fast);
+        }
+
+        .sidebar-toggle:hover {
+            color: var(--text-primary);
+            border-color: var(--border-accent);
+            background: var(--bg-glass);
         }
 
         .header-logo {
-            width: 40px;
-            height: 40px;
+            width: 34px;
+            height: 34px;
             border-radius: var(--radius-sm);
             background: var(--gradient-main);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 17px;
             font-weight: 800;
             color: white;
             box-shadow: var(--shadow-button);
+            flex-shrink: 0;
+        }
+
+        .header-brand-text {
+            display: flex;
+            flex-direction: column;
         }
 
         .header-title {
-            font-size: 20px;
+            font-size: 17px;
             font-weight: 700;
             letter-spacing: -0.02em;
+            line-height: 1.2;
         }
 
         .header-title span {
@@ -177,26 +235,26 @@
         }
 
         .header-subtitle {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-muted);
             font-weight: 500;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.1em;
         }
 
-        .header-status {
+        .header-right {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 8px;
         }
 
         .status-badge {
             display: flex;
             align-items: center;
             gap: 6px;
-            padding: 6px 14px;
+            padding: 5px 12px;
             border-radius: 100px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             background: rgba(34, 197, 94, 0.1);
             border: 1px solid rgba(34, 197, 94, 0.2);
@@ -204,31 +262,88 @@
         }
 
         .status-dot {
-            width: 7px;
-            height: 7px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
             background: var(--accent-green);
             animation: pulse-dot 2s ease-in-out infinite;
         }
 
         @keyframes pulse-dot {
-            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
-            50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+            }
+
+            50% {
+                opacity: 0.7;
+                box-shadow: 0 0 0 5px rgba(34, 197, 94, 0);
+            }
+        }
+
+        .icon-btn {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all var(--transition-fast);
+            position: relative;
+        }
+
+        .icon-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--border-accent);
+            background: rgba(139, 92, 246, 0.07);
+        }
+
+        .icon-btn .tooltip {
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            font-size: 10px;
+            font-family: var(--font-sans);
+            padding: 4px 8px;
+            border-radius: 5px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--transition-fast);
+        }
+
+        .icon-btn:hover .tooltip {
+            opacity: 1;
         }
 
         /* ═══ Sidebar ═══ */
         .sidebar {
             background: var(--bg-secondary);
             border-right: 1px solid var(--border-subtle);
-            padding: 20px 0;
-            overflow-y: auto;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
+            transition: width var(--transition-normal), padding var(--transition-normal);
         }
 
-        .sidebar-section {
-            padding: 0 16px;
-            margin-bottom: 24px;
+        .sidebar-header {
+            padding: 14px 14px 10px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
         }
 
         .sidebar-label {
@@ -237,8 +352,50 @@
             text-transform: uppercase;
             letter-spacing: 0.1em;
             color: var(--text-muted);
-            padding: 0 12px;
-            margin-bottom: 8px;
+        }
+
+        .sidebar-new-btn {
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid var(--border-accent);
+            color: var(--accent-purple);
+            padding: 3px 10px;
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            font-family: var(--font-sans);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .sidebar-new-btn:hover {
+            background: rgba(139, 92, 246, 0.18);
+        }
+
+        .sidebar-search-wrap {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-subtle);
+            flex-shrink: 0;
+        }
+
+        .sidebar-search {
+            width: 100%;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 6px 10px;
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 12px;
+            outline: none;
+            transition: border-color var(--transition-fast);
+        }
+
+        .sidebar-search::placeholder {
+            color: var(--text-muted);
+        }
+
+        .sidebar-search:focus {
+            border-color: var(--border-accent);
         }
 
         .session-list {
@@ -248,15 +405,25 @@
             gap: 2px;
             flex: 1;
             overflow-y: auto;
-            padding: 0 16px;
+            padding: 6px 8px;
+        }
+
+        .session-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .session-list::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 2px;
         }
 
         .session-item {
-            padding: 10px 12px;
+            padding: 9px 10px;
             border-radius: var(--radius-sm);
             cursor: pointer;
             transition: all var(--transition-fast);
             border: 1px solid transparent;
+            position: relative;
         }
 
         .session-item:hover {
@@ -269,6 +436,13 @@
             border-color: var(--border-accent);
         }
 
+        .session-item-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 4px;
+        }
+
         .session-item-title {
             font-size: 12px;
             font-weight: 600;
@@ -278,6 +452,28 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
             line-height: 1.4;
+            flex: 1;
+        }
+
+        .session-delete {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 13px;
+            cursor: pointer;
+            padding: 1px 3px;
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .session-item:hover .session-delete {
+            opacity: 1;
+        }
+
+        .session-delete:hover {
+            color: var(--accent-red);
         }
 
         .session-item-meta {
@@ -289,11 +485,28 @@
             gap: 8px;
         }
 
+        .session-score-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            flex-shrink: 0;
+        }
+
+        .session-score-dot.mid {
+            background: var(--accent-orange);
+        }
+
+        .session-score-dot.low {
+            background: var(--accent-red);
+        }
+
         .sidebar-empty {
             padding: 16px;
             text-align: center;
             color: var(--text-muted);
             font-size: 12px;
+            line-height: 1.5;
         }
 
         /* ═══ Main Content ═══ */
@@ -305,42 +518,51 @@
 
         /* ═══ Prompt Panel ═══ */
         .prompt-panel {
-            padding: 24px 28px;
+            padding: 14px 20px;
             border-bottom: 1px solid var(--border-subtle);
             background: var(--gradient-card);
+            flex-shrink: 0;
         }
 
         .prompt-label {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 10px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 8px;
             display: flex;
             align-items: center;
             gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
         }
 
         .prompt-input-group {
             display: flex;
-            gap: 12px;
+            gap: 10px;
             align-items: flex-end;
         }
 
-        .prompt-textarea {
+        .prompt-textarea-wrap {
             flex: 1;
+            position: relative;
+        }
+
+        .prompt-textarea {
+            width: 100%;
             background: var(--bg-primary);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            padding: 14px 18px;
+            padding: 11px 50px 11px 14px;
             color: var(--text-primary);
             font-family: var(--font-sans);
-            font-size: 14px;
+            font-size: 13px;
             line-height: 1.5;
-            resize: vertical;
-            min-height: 56px;
-            max-height: 160px;
+            resize: none;
+            height: 44px;
+            max-height: 140px;
             transition: all var(--transition-fast);
             outline: none;
+            overflow-y: hidden;
         }
 
         .prompt-textarea::placeholder {
@@ -350,16 +572,33 @@
         .prompt-textarea:focus {
             border-color: var(--accent-purple);
             box-shadow: 0 0 0 3px var(--accent-purple-glow);
+            height: auto;
+            overflow-y: auto;
+        }
+
+        .char-count {
+            position: absolute;
+            right: 10px;
+            bottom: 8px;
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            pointer-events: none;
+        }
+
+        .char-count.warn {
+            color: var(--accent-orange);
         }
 
         .btn-execute {
             background: var(--gradient-button);
             color: white;
             border: none;
-            padding: 14px 28px;
+            padding: 0 20px;
+            height: 44px;
             border-radius: var(--radius-md);
             font-family: var(--font-sans);
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
             transition: all var(--transition-fast);
@@ -367,12 +606,27 @@
             white-space: nowrap;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 7px;
             letter-spacing: 0.02em;
+            flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-execute::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent);
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        .btn-execute:hover:not(:disabled)::after {
+            opacity: 1;
         }
 
         .btn-execute:hover:not(:disabled) {
-            background: var(--gradient-button-hover);
             transform: translateY(-1px);
             box-shadow: 0 6px 28px rgba(139, 92, 246, 0.45);
         }
@@ -388,12 +642,12 @@
         }
 
         .btn-execute .spinner {
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.25);
             border-top-color: white;
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spin 0.75s linear infinite;
             display: none;
         }
 
@@ -406,73 +660,179 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .prompt-presets {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .preset-chip {
+            padding: 3px 10px;
+            border-radius: 100px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            font-family: var(--font-sans);
+        }
+
+        .preset-chip:hover {
+            border-color: var(--border-accent);
+            color: var(--text-accent);
+            background: rgba(139, 92, 246, 0.06);
+        }
+
+        /* ═══ Progress Bar ═══ */
+        .progress-bar-wrap {
+            height: 2px;
+            background: transparent;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--gradient-main);
+            transition: width 0.4s ease-out;
+            border-radius: 1px;
+        }
+
+        .progress-bar.indeterminate {
+            width: 30%;
+            animation: progress-slide 1.5s ease-in-out infinite;
+        }
+
+        @keyframes progress-slide {
+            0% {
+                transform: translateX(-150%);
+            }
+
+            100% {
+                transform: translateX(450%);
+            }
         }
 
         /* ═══ Output Area ═══ */
         .output-area {
             flex: 1;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0;
+            display: flex;
             overflow: hidden;
+        }
+
+        /* ═══ Resize Divider ═══ */
+        .resize-divider {
+            width: 5px;
+            cursor: col-resize;
+            background: var(--border-subtle);
+            flex-shrink: 0;
+            position: relative;
+            transition: background var(--transition-fast);
+        }
+
+        .resize-divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 1px;
+            height: 36px;
+            background: var(--border-accent);
+            border-radius: 1px;
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        .resize-divider:hover,
+        .resize-divider.dragging {
+            background: var(--border-accent);
+        }
+
+        .resize-divider:hover::after,
+        .resize-divider.dragging::after {
+            opacity: 1;
         }
 
         /* ═══ Terminal Panel ═══ */
         .terminal-panel {
             display: flex;
             flex-direction: column;
-            border-right: 1px solid var(--border-subtle);
             overflow: hidden;
+            min-width: 200px;
+        }
+
+        .results-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 200px;
+            flex: 1;
         }
 
         .panel-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 20px;
+            padding: 9px 14px;
             border-bottom: 1px solid var(--border-subtle);
-            background: var(--bg-tertiary);
+            background: var(--bg-secondary);
             flex-shrink: 0;
+            gap: 6px;
         }
 
         .panel-title {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: var(--text-secondary);
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 7px;
         }
 
         .panel-title-dot {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .panel-title-dot.online {
             background: var(--accent-green);
         }
 
         .panel-title-dot.running {
-            animation: pulse-dot 1.5s ease-in-out infinite;
+            background: var(--accent-orange);
+            animation: pulse-dot 1.2s ease-in-out infinite;
         }
 
         .panel-actions {
             display: flex;
-            gap: 8px;
+            gap: 4px;
+            align-items: center;
+            margin-left: auto;
         }
 
         .panel-btn {
             background: transparent;
             border: 1px solid var(--border-subtle);
             color: var(--text-muted);
-            padding: 4px 10px;
+            padding: 3px 9px;
             border-radius: var(--radius-sm);
-            font-size: 11px;
+            font-size: 10px;
             font-family: var(--font-sans);
             cursor: pointer;
             transition: all var(--transition-fast);
+            font-weight: 600;
         }
 
         .panel-btn:hover {
@@ -481,19 +841,151 @@
             background: rgba(139, 92, 246, 0.05);
         }
 
+        .panel-btn.active {
+            color: var(--accent-purple);
+            border-color: var(--border-accent);
+            background: rgba(139, 92, 246, 0.08);
+        }
+
+        /* ═══ Terminal Search ═══ */
+        .terminal-search-bar {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-secondary);
+            flex-shrink: 0;
+        }
+
+        .terminal-search-bar.visible {
+            display: flex;
+        }
+
+        .terminal-search-input {
+            flex: 1;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 4px 10px;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            outline: none;
+            transition: border-color var(--transition-fast);
+        }
+
+        .terminal-search-input:focus {
+            border-color: var(--border-accent);
+        }
+
+        .terminal-search-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-count {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            white-space: nowrap;
+        }
+
+        .search-nav-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 4px;
+            transition: color var(--transition-fast);
+        }
+
+        .search-nav-btn:hover {
+            color: var(--text-primary);
+        }
+
+        /* ═══ Agent Cards ═══ */
+        .agent-cards {
+            display: flex;
+            gap: 5px;
+            padding: 7px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+            overflow-x: auto;
+            flex-shrink: 0;
+            background: var(--bg-secondary);
+        }
+
+        .agent-cards::-webkit-scrollbar {
+            height: 3px;
+        }
+
+        .agent-cards::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 2px;
+        }
+
+        .agent-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 4px 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            font-size: 11px;
+            font-weight: 600;
+            transition: all var(--transition-fast);
+        }
+
+        .agent-card.idle {
+            color: var(--text-muted);
+        }
+
+        .agent-card.active {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background: rgba(6, 182, 212, 0.07);
+        }
+
+        .agent-card.done {
+            border-color: rgba(34, 197, 94, 0.3);
+            color: var(--accent-green);
+            background: rgba(34, 197, 94, 0.06);
+        }
+
+        .agent-card.error {
+            border-color: rgba(239, 68, 68, 0.3);
+            color: var(--accent-red);
+            background: rgba(239, 68, 68, 0.06);
+        }
+
+        .agent-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: currentColor;
+        }
+
+        .agent-card.active .agent-indicator {
+            animation: pulse-dot 1s ease-in-out infinite;
+        }
+
+        /* ═══ Terminal ═══ */
         .terminal-body {
             flex: 1;
             overflow-y: auto;
-            padding: 16px 20px;
+            padding: 12px 14px;
             font-family: var(--font-mono);
             font-size: 12px;
             line-height: 1.7;
             background: var(--bg-primary);
-            scroll-behavior: smooth;
         }
 
         .terminal-body::-webkit-scrollbar {
-            width: 6px;
+            width: 5px;
         }
 
         .terminal-body::-webkit-scrollbar-track {
@@ -508,7 +1000,18 @@
         .terminal-line {
             padding: 1px 0;
             word-break: break-word;
-            animation: fade-in 0.15s ease-out;
+            animation: fade-in 0.12s ease-out;
+            border-radius: 3px;
+            padding-left: 4px;
+            margin-left: -4px;
+        }
+
+        .terminal-line.highlight-match {
+            background: rgba(251, 191, 36, 0.12);
+        }
+
+        .terminal-line.highlight-current {
+            background: rgba(251, 191, 36, 0.25);
         }
 
         .terminal-line.event-log {
@@ -536,43 +1039,82 @@
         }
 
         @keyframes fade-in {
-            from { opacity: 0; transform: translateY(2px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateX(-3px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .terminal-timestamp {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-right: 8px;
+            user-select: none;
         }
 
         .terminal-welcome {
             color: var(--text-muted);
-            padding: 40px 0;
+            padding: 40px 20px;
             text-align: center;
             font-family: var(--font-sans);
         }
 
+        .terminal-welcome .tw-icon {
+            font-size: 34px;
+            margin-bottom: 10px;
+        }
+
         .terminal-welcome h3 {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
             color: var(--text-secondary);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .terminal-welcome p {
-            font-size: 13px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .kbd-hints {
+            margin-top: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .kbd-hint {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        kbd {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-family: var(--font-mono);
         }
 
         /* ═══ Results Panel ═══ */
-        .results-panel {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
         .results-body {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
+            padding: 16px;
         }
 
         .results-body::-webkit-scrollbar {
-            width: 6px;
+            width: 5px;
         }
 
         .results-body::-webkit-scrollbar-track {
@@ -584,21 +1126,48 @@
             border-radius: 3px;
         }
 
+        .results-welcome {
+            color: var(--text-muted);
+            padding: 50px 20px;
+            text-align: center;
+            font-family: var(--font-sans);
+        }
+
+        .results-welcome .icon {
+            font-size: 44px;
+            margin-bottom: 14px;
+        }
+
+        .results-welcome h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .results-welcome p {
+            font-size: 12px;
+            max-width: 260px;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+
         /* ═══ Scorecard ═══ */
         .scorecard {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
-            margin-bottom: 24px;
+            gap: 10px;
+            margin-bottom: 18px;
         }
 
         .score-card {
             background: var(--bg-card);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            padding: 16px;
+            padding: 14px 12px;
             text-align: center;
             transition: all var(--transition-fast);
+            cursor: default;
         }
 
         .score-card:hover {
@@ -608,7 +1177,7 @@
         }
 
         .score-value {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 800;
             background: var(--gradient-main);
             -webkit-background-clip: text;
@@ -617,41 +1186,38 @@
         }
 
         .score-label {
-            font-size: 10px;
-            font-weight: 600;
+            font-size: 9px;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.1em;
             color: var(--text-muted);
-            margin-top: 4px;
+            margin-top: 3px;
         }
 
         /* ═══ Task Results ═══ */
-        .task-results {
-            margin-bottom: 24px;
-        }
-
         .section-title {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
+            letter-spacing: 0.08em;
             color: var(--text-secondary);
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 7px;
         }
 
         .task-card {
             background: var(--bg-card);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            padding: 14px 16px;
-            margin-bottom: 8px;
+            padding: 11px 13px;
+            margin-bottom: 6px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             transition: all var(--transition-fast);
+            cursor: default;
         }
 
         .task-card:hover {
@@ -659,7 +1225,7 @@
         }
 
         .task-status-icon {
-            font-size: 18px;
+            font-size: 16px;
             flex-shrink: 0;
         }
 
@@ -669,7 +1235,7 @@
         }
 
         .task-name {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
             color: var(--text-primary);
             white-space: nowrap;
@@ -678,13 +1244,13 @@
         }
 
         .task-meta {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-muted);
-            margin-top: 2px;
+            margin-top: 1px;
         }
 
         .task-score {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             color: var(--accent-green);
             flex-shrink: 0;
@@ -700,23 +1266,23 @@
 
         /* ═══ Artifact Preview ═══ */
         .artifact-section {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
         .artifact-tabs {
             display: flex;
             gap: 4px;
-            margin-bottom: 12px;
             flex-wrap: wrap;
+            margin-bottom: 10px;
         }
 
         .artifact-tab {
-            padding: 6px 14px;
+            padding: 5px 12px;
             border-radius: var(--radius-sm);
             background: var(--bg-card);
             border: 1px solid var(--border-subtle);
             color: var(--text-secondary);
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             cursor: pointer;
             transition: all var(--transition-fast);
@@ -729,100 +1295,19 @@
         }
 
         .artifact-tab.active {
-            background: rgba(139, 92, 246, 0.12);
+            background: rgba(139, 92, 246, 0.1);
             border-color: var(--accent-purple);
             color: var(--accent-purple);
         }
 
-        .artifact-preview {
-            background: white;
-            border-radius: var(--radius-md);
-            overflow: hidden;
-            border: 1px solid var(--border-subtle);
-            min-height: 200px;
-        }
-
-        .artifact-preview iframe {
-            width: 100%;
-            height: 350px;
-            border: none;
-        }
-
-        .artifact-code {
-            background: var(--bg-primary);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-md);
-            padding: 16px;
-            max-height: 350px;
-            overflow: auto;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            line-height: 1.6;
-            color: var(--text-secondary);
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        .results-welcome {
-            color: var(--text-muted);
-            padding: 60px 20px;
-            text-align: center;
-            font-family: var(--font-sans);
-        }
-
-        .results-welcome .icon {
-            font-size: 48px;
-            margin-bottom: 16px;
-        }
-
-        .results-welcome h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-secondary);
+        .artifact-toolbar {
+            display: flex;
+            gap: 5px;
             margin-bottom: 8px;
+            align-items: center;
         }
 
-        .results-welcome p {
-            font-size: 13px;
-            max-width: 280px;
-            margin: 0 auto;
-            line-height: 1.5;
-        }
-
-        /* ═══ Preset Prompts ═══ */
-        .prompt-presets {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
-
-        .preset-chip {
-            padding: 5px 12px;
-            border-radius: 100px;
-            background: var(--bg-glass);
-            border: 1px solid var(--border-subtle);
-            color: var(--text-muted);
-            font-size: 11px;
-            cursor: pointer;
-            transition: all var(--transition-fast);
-            font-family: var(--font-sans);
-        }
-
-        .preset-chip:hover {
-            border-color: var(--border-accent);
-            color: var(--text-accent);
-            background: rgba(139, 92, 246, 0.06);
-        }
-
-        /* ═══ View Toggle ═══ */
-        .view-toggle {
-            display: flex;
-            gap: 4px;
-            margin-left: auto;
-        }
-
-        .view-toggle-btn {
+        .artifact-toolbar-btn {
             background: transparent;
             border: 1px solid var(--border-subtle);
             color: var(--text-muted);
@@ -832,6 +1317,72 @@
             font-family: var(--font-sans);
             cursor: pointer;
             transition: all var(--transition-fast);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .artifact-toolbar-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--border-accent);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .artifact-preview {
+            background: white;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .artifact-preview iframe {
+            width: 100%;
+            height: 320px;
+            border: none;
+        }
+
+        .artifact-code {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            max-height: 320px;
+            overflow: auto;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            line-height: 1.65;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .artifact-code::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .artifact-code::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 2px;
+        }
+
+        .view-toggle {
+            display: flex;
+            gap: 3px;
+        }
+
+        .view-toggle-btn {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 3px 9px;
+            border-radius: var(--radius-sm);
+            font-size: 10px;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            font-weight: 600;
         }
 
         .view-toggle-btn.active {
@@ -840,557 +1391,1164 @@
             color: var(--accent-purple);
         }
 
+        /* ═══ Toast Notifications ═══ */
+        .toast-container {
+            position: fixed;
+            top: 62px;
+            right: 14px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 240px;
+            max-width: 320px;
+            box-shadow: var(--shadow-card);
+            animation: toast-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: all;
+            backdrop-filter: blur(16px);
+        }
+
+        .toast.out {
+            animation: toast-out 0.25s ease-in forwards;
+        }
+
+        .toast-icon {
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+
+        .toast-body {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.3;
+        }
+
+        .toast-msg {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 1px;
+            line-height: 1.3;
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 13px;
+            padding: 0 2px;
+        }
+
+        .toast-close:hover {
+            color: var(--text-primary);
+        }
+
+        .toast.success {
+            border-left: 3px solid var(--accent-green);
+        }
+
+        .toast.error {
+            border-left: 3px solid var(--accent-red);
+        }
+
+        .toast.warning {
+            border-left: 3px solid var(--accent-orange);
+        }
+
+        .toast.info {
+            border-left: 3px solid var(--accent-cyan);
+        }
+
+        @keyframes toast-in {
+            from {
+                opacity: 0;
+                transform: translateX(24px) scale(0.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+
+        @keyframes toast-out {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateX(24px);
+            }
+        }
+
+        /* ═══ Keyboard Shortcuts Modal ═══ */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
+            padding: 24px;
+            width: 420px;
+            max-width: 90vw;
+            box-shadow: var(--shadow-card);
+            animation: modal-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes modal-in {
+            from {
+                opacity: 0;
+                transform: scale(0.92) translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            width: 28px;
+            height: 28px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
+            border-color: var(--border-accent);
+        }
+
+        .shortcut-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .shortcut-row:last-child {
+            border-bottom: none;
+        }
+
+        .shortcut-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .shortcut-keys {
+            display: flex;
+            gap: 4px;
+        }
+
         /* ═══ Responsive ═══ */
         @media (max-width: 1024px) {
             .app-container {
-                grid-template-columns: 1fr;
+                grid-template-columns: 0px 1fr;
             }
+
             .sidebar {
                 display: none;
             }
+
             .output-area {
-                grid-template-columns: 1fr;
+                flex-direction: column;
             }
+
             .terminal-panel {
-                border-right: none;
+                min-height: 200px;
+                max-height: 40vh;
                 border-bottom: 1px solid var(--border-subtle);
-                max-height: 45vh;
             }
+
+            .resize-divider {
+                display: none;
+            }
+
             .scorecard {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
     </style>
 </head>
+
 <body>
 
-<div class="bg-mesh"></div>
+    <div class="bg-mesh"></div>
 
-<div class="app-container">
-    <!-- ═══ Header ═══ -->
-    <header class="header">
-        <div class="header-brand">
-            <div class="header-logo">N</div>
-            <div>
-                <div class="header-title"><span>NexusSentry</span> v3.0</div>
-                <div class="header-subtitle">Multi-Agent AI Command Center</div>
-            </div>
-        </div>
-        <div class="header-status">
-            <div class="status-badge" id="systemStatus">
-                <div class="status-dot"></div>
-                <span>System Ready</span>
-            </div>
-        </div>
-    </header>
+    <!-- ═══ Toast Container ═══ -->
+    <div class="toast-container" id="toastContainer"></div>
 
-    <!-- ═══ Sidebar ═══ -->
-    <aside class="sidebar">
-        <div class="sidebar-section">
-            <div class="sidebar-label">Recent Sessions</div>
-        </div>
-        <ul class="session-list" id="sessionList">
-            <li class="sidebar-empty">Loading sessions...</li>
-        </ul>
-    </aside>
-
-    <!-- ═══ Main Content ═══ -->
-    <main class="main-content">
-        <!-- Prompt Panel -->
-        <div class="prompt-panel">
-            <div class="prompt-label">
-                <span>🎯</span> Enter your goal for the AI agent swarm
+    <!-- ═══ Keyboard Shortcuts Modal ═══ -->
+    <div class="modal-overlay" id="shortcutsModal" onclick="if(event.target===this)closeModal('shortcutsModal')">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">⌨️ Keyboard Shortcuts</div>
+                <button class="modal-close" onclick="closeModal('shortcutsModal')">✕</button>
             </div>
-            <div class="prompt-input-group">
-                <textarea
-                    id="promptInput"
-                    class="prompt-textarea"
-                    placeholder="e.g. Create a modern portfolio website with dark theme, animations, and a contact form..."
-                    rows="2"
-                ></textarea>
-                <button id="executeBtn" class="btn-execute" onclick="executeSwarm()">
-                    <span class="btn-icon">⚡</span>
-                    <span class="spinner"></span>
-                    Execute
+            <div class="shortcut-row"><span class="shortcut-label">Execute swarm</span><span
+                    class="shortcut-keys"><kbd>Ctrl</kbd><kbd>Enter</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Focus prompt</span><span
+                    class="shortcut-keys"><kbd>/</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Search terminal</span><span
+                    class="shortcut-keys"><kbd>Ctrl</kbd><kbd>F</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Clear terminal</span><span
+                    class="shortcut-keys"><kbd>Ctrl</kbd><kbd>L</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Toggle sidebar</span><span
+                    class="shortcut-keys"><kbd>Ctrl</kbd><kbd>B</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Show shortcuts</span><span
+                    class="shortcut-keys"><kbd>?</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Close modal / search</span><span
+                    class="shortcut-keys"><kbd>Esc</kbd></span></div>
+        </div>
+    </div>
+
+    <!-- ═══ App ═══ -->
+    <div class="app-container" id="appContainer">
+
+        <!-- HEADER -->
+        <header class="header">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()"
+                    title="Toggle sidebar (Ctrl+B)">☰</button>
+                <div class="header-logo">N</div>
+                <div class="header-brand-text">
+                    <div class="header-title"><span>NexusSentry</span> v3.1</div>
+                    <div class="header-subtitle">Multi-Agent Command Center</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="status-badge" id="systemStatus">
+                    <div class="status-dot"></div>
+                    <span>System Ready</span>
+                </div>
+                <button class="icon-btn" onclick="openModal('shortcutsModal')" title="Keyboard Shortcuts">
+                    ⌨️
+                    <span class="tooltip">Shortcuts (?)</span>
+                </button>
+                <button class="icon-btn" onclick="exportSession()" title="Export Session">
+                    ⬇️
+                    <span class="tooltip">Export JSON</span>
+                </button>
+                <button class="icon-btn" onclick="copyTerminalLog()" title="Copy Terminal Log">
+                    📋
+                    <span class="tooltip">Copy Log</span>
                 </button>
             </div>
-            <div class="prompt-presets">
-                <span class="preset-chip" onclick="usePreset(this)">Create a portfolio website</span>
-                <span class="preset-chip" onclick="usePreset(this)">Build a todo app in single HTML</span>
-                <span class="preset-chip" onclick="usePreset(this)">Analyze Python app for SQL injection</span>
-                <span class="preset-chip" onclick="usePreset(this)">Create a dashboard with charts</span>
+        </header>
+
+        <!-- SIDEBAR -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-label">Sessions</div>
+                <button class="sidebar-new-btn" onclick="newSession()">+ New</button>
             </div>
+            <div class="sidebar-search-wrap">
+                <input type="text" class="sidebar-search" placeholder="Filter sessions…" id="sessionSearch"
+                    oninput="filterSessions()" />
+            </div>
+            <ul class="session-list" id="sessionList">
+                <li class="sidebar-empty">Loading sessions…</li>
+            </ul>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+            <!-- Prompt Panel -->
+            <div class="prompt-panel">
+                <div class="prompt-label">
+                    <span>🎯</span> Goal for the AI agent swarm
+                </div>
+                <div class="prompt-input-group">
+                    <div class="prompt-textarea-wrap">
+                        <textarea id="promptInput" class="prompt-textarea"
+                            placeholder="e.g. Create a modern portfolio website with dark theme, animations, and a contact form…"
+                            rows="1" maxlength="2000" oninput="updateCharCount(this)"></textarea>
+                        <span class="char-count" id="charCount">0 / 2000</span>
+                    </div>
+                    <button id="executeBtn" class="btn-execute" onclick="executeSwarm()">
+                        <span class="btn-icon">⚡</span>
+                        <span class="spinner"></span>
+                        Execute
+                    </button>
+                </div>
+                <div class="prompt-presets">
+                    <span class="preset-chip" onclick="usePreset(this)">Portfolio website</span>
+                    <span class="preset-chip" onclick="usePreset(this)">Todo app single HTML</span>
+                    <span class="preset-chip" onclick="usePreset(this)">SQL injection audit</span>
+                    <span class="preset-chip" onclick="usePreset(this)">Dashboard with charts</span>
+                    <span class="preset-chip" onclick="usePreset(this)">REST API design doc</span>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-bar-wrap" id="progressWrap">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+
+            <!-- Output Area -->
+            <div class="output-area" id="outputArea">
+
+                <!-- Terminal Panel -->
+                <div class="terminal-panel" id="terminalPanel" style="width:50%">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <div class="panel-title-dot" id="terminalDot"></div>
+                            Terminal
+                        </div>
+                        <div class="panel-actions">
+                            <button class="panel-btn" id="searchToggleBtn" onclick="toggleTerminalSearch()"
+                                title="Ctrl+F">🔍</button>
+                            <button class="panel-btn" onclick="clearTerminal()" title="Ctrl+L">Clear</button>
+                            <button class="panel-btn" id="autoScrollBtn" onclick="toggleAutoScroll()"
+                                title="Auto-scroll">↓ Auto</button>
+                            <button class="panel-btn active" onclick="filterTerminal('all')" id="filterAll">All</button>
+                            <button class="panel-btn" onclick="filterTerminal('error')" id="filterErr">Errors</button>
+                        </div>
+                    </div>
+
+                    <!-- Terminal Search Bar -->
+                    <div class="terminal-search-bar" id="terminalSearchBar">
+                        <input type="text" class="terminal-search-input" id="terminalSearchInput"
+                            placeholder="Search terminal…" oninput="searchTerminal()" />
+                        <span class="search-count" id="searchCount">0 matches</span>
+                        <button class="search-nav-btn" onclick="navSearch(-1)" title="Previous">↑</button>
+                        <button class="search-nav-btn" onclick="navSearch(1)" title="Next">↓</button>
+                        <button class="panel-btn" onclick="toggleTerminalSearch()">✕</button>
+                    </div>
+
+                    <!-- Agent Cards -->
+                    <div class="agent-cards" id="agentCards">
+                        <div class="agent-card idle"><span class="agent-indicator"></span>Scout</div>
+                        <div class="agent-card idle"><span class="agent-indicator"></span>Architect</div>
+                        <div class="agent-card idle"><span class="agent-indicator"></span>Builder</div>
+                        <div class="agent-card idle"><span class="agent-indicator"></span>Critic</div>
+                        <div class="agent-card idle"><span class="agent-indicator"></span>Guardian</div>
+                    </div>
+
+                    <div class="terminal-body" id="terminalBody">
+                        <div class="terminal-welcome">
+                            <div class="tw-icon">⚡</div>
+                            <h3>Agent Terminal Ready</h3>
+                            <p>Execute a goal to see real-time output from the swarm.</p>
+                            <div class="kbd-hints">
+                                <div class="kbd-hint"><kbd>Ctrl</kbd><kbd>Enter</kbd> Execute</div>
+                                <div class="kbd-hint"><kbd>Ctrl</kbd><kbd>F</kbd> Search terminal</div>
+                                <div class="kbd-hint"><kbd>?</kbd> All shortcuts</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resize Divider -->
+                <div class="resize-divider" id="resizeDivider" title="Drag to resize"></div>
+
+                <!-- Results Panel -->
+                <div class="results-panel" id="resultsPanel">
+                    <div class="panel-header">
+                        <div class="panel-title">📊 Results</div>
+                        <div class="panel-actions">
+                            <div class="view-toggle">
+                                <button class="view-toggle-btn active"
+                                    onclick="switchResultView('results', this)">Results</button>
+                                <button class="view-toggle-btn"
+                                    onclick="switchResultView('artifacts', this)">Artifacts</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="results-body" id="resultsBody">
+                        <div class="results-welcome" id="resultsWelcome">
+                            <div class="icon">✨</div>
+                            <h3>Results will appear here</h3>
+                            <p>Execute a goal to see the scorecard, task results, and generated artifacts.</p>
+                        </div>
+                        <div id="resultsContent" style="display:none;"></div>
+                        <div id="artifactsContent" style="display:none;"></div>
+                    </div>
+                </div>
+
+            </div><!-- /output-area -->
+        </main>
+    </div><!-- /app-container -->
+
+    <script>
+        // ═══════════════════════════════════════════════════════
+        //  NexusSentry v3.1 — Enhanced Frontend Logic
+        // ═══════════════════════════════════════════════════════
+
+        const API_BASE = window.location.origin;
+        let autoScroll = true;
+        let isRunning = false;
+        let currentArtifacts = {};
+        let currentSessionId = null;
+        let allSessions = [];
+        let terminalLines = [];       // { text, className }
+        let currentFilter = 'all';
+        let searchMatchIndices = [];
+        let searchCurrentIdx = -1;
+
+        // ══ INIT ══
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSessions();
+            checkHealth();
+            initResizablePanels();
+
+            const ta = document.getElementById('promptInput');
+            ta.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    executeSwarm();
+                }
+            });
+
+            // Auto-grow textarea
+            ta.addEventListener('input', function () {
+                this.style.height = '44px';
+                this.style.height = Math.min(this.scrollHeight, 140) + 'px';
+            });
+        });
+
+        // ── Global Keyboard Shortcuts ──
+        document.addEventListener('keydown', e => {
+            const tag = document.activeElement.tagName;
+            const isInput = (tag === 'TEXTAREA' || tag === 'INPUT');
+
+            // Shortcuts that work even in inputs
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); executeSwarm(); return; }
+            if (e.key === 'Escape') { closeAllModals(); if (searchVisible) toggleTerminalSearch(false); return; }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); toggleTerminalSearch(true); return; }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); clearTerminal(); return; }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); toggleSidebar(); return; }
+
+            // Shortcuts that only work when NOT in an input
+            if (isInput) return;
+            if (e.key === '/') { e.preventDefault(); document.getElementById('promptInput').focus(); }
+            if (e.key === '?') { openModal('shortcutsModal'); }
+        });
+
+        // ══ TOAST SYSTEM ══
+        function toast(type, title, msg = '', duration = 3500) {
+            const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+            const container = document.getElementById('toastContainer');
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.innerHTML = `
+        <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+        <div class="toast-body">
+            <div class="toast-title">${escapeHtml(title)}</div>
+            ${msg ? `<div class="toast-msg">${escapeHtml(msg)}</div>` : ''}
         </div>
+        <button class="toast-close" onclick="dismissToast(this.parentElement)">✕</button>
+    `;
+            container.appendChild(el);
+            if (duration > 0) setTimeout(() => dismissToast(el), duration);
+        }
 
-        <!-- Output Area -->
-        <div class="output-area">
-            <!-- Terminal Panel -->
-            <div class="terminal-panel">
-                <div class="panel-header">
-                    <div class="panel-title">
-                        <div class="panel-title-dot" id="terminalDot"></div>
-                        Agent Terminal
-                    </div>
-                    <div class="panel-actions">
-                        <button class="panel-btn" onclick="clearTerminal()">Clear</button>
-                        <button class="panel-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">Auto-scroll ✓</button>
-                    </div>
-                </div>
-                <div class="terminal-body" id="terminalBody">
-                    <div class="terminal-welcome">
-                        <h3>🤖 Agent Terminal</h3>
-                        <p>Real-time output from the NexusSentry swarm will appear here when you execute a goal.</p>
-                    </div>
-                </div>
-            </div>
+        function dismissToast(el) {
+            if (!el || el.classList.contains('out')) return;
+            el.classList.add('out');
+            setTimeout(() => el.remove(), 280);
+        }
 
-            <!-- Results Panel -->
-            <div class="results-panel">
-                <div class="panel-header">
-                    <div class="panel-title">
-                        📊 Results & Artifacts
-                    </div>
-                    <div class="view-toggle">
-                        <button class="view-toggle-btn active" onclick="switchResultView('results', this)">Results</button>
-                        <button class="view-toggle-btn" onclick="switchResultView('artifacts', this)">Artifacts</button>
-                    </div>
+        // ══ MODAL SYSTEM ══
+        function openModal(id) { document.getElementById(id).classList.add('open'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+        function closeAllModals() { document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open')); }
+
+        // ══ SIDEBAR ══
+        function toggleSidebar() {
+            document.getElementById('appContainer').classList.toggle('sidebar-collapsed');
+        }
+
+        function newSession() {
+            document.getElementById('promptInput').value = '';
+            document.getElementById('promptInput').focus();
+            updateCharCount(document.getElementById('promptInput'));
+            document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+            clearTerminal();
+            document.getElementById('resultsWelcome').style.display = 'block';
+            document.getElementById('resultsContent').style.display = 'none';
+            document.getElementById('artifactsContent').style.display = 'none';
+            currentSessionId = null;
+            currentArtifacts = {};
+        }
+
+        function filterSessions() {
+            const q = document.getElementById('sessionSearch').value.toLowerCase();
+            document.querySelectorAll('.session-item').forEach(el => {
+                const title = el.querySelector('.session-item-title')?.textContent?.toLowerCase() || '';
+                el.style.display = (!q || title.includes(q)) ? '' : 'none';
+            });
+        }
+
+        // ══ HEALTH CHECK ══
+        async function checkHealth() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/health`);
+                const data = await resp.json();
+                const badge = document.getElementById('systemStatus');
+                if (data.status === 'ok') {
+                    const prov = data.mock_mode ? 'Mock Mode' : `${data.providers.length} Providers`;
+                    badge.querySelector('span').textContent = `Online · ${prov}`;
+                    badge.querySelector('.status-dot').style.background = 'var(--accent-green)';
+                }
+            } catch {
+                const badge = document.getElementById('systemStatus');
+                badge.style.borderColor = 'rgba(239,68,68,0.3)';
+                badge.style.background = 'rgba(239,68,68,0.08)';
+                badge.style.color = '#ef4444';
+                badge.querySelector('span').textContent = 'Offline';
+                badge.querySelector('.status-dot').style.background = 'var(--accent-red)';
+            }
+        }
+
+        // ══ SESSIONS ══
+        async function loadSessions() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/sessions`);
+                const data = await resp.json();
+                allSessions = data.sessions || [];
+                renderSessionList(allSessions);
+            } catch {
+                document.getElementById('sessionList').innerHTML = '<li class="sidebar-empty">Could not load sessions</li>';
+            }
+        }
+
+        function renderSessionList(sessions) {
+            const list = document.getElementById('sessionList');
+            if (!sessions.length) {
+                list.innerHTML = '<li class="sidebar-empty">No sessions yet.<br/>Run your first goal!</li>';
+                return;
+            }
+            list.innerHTML = sessions.map(s => {
+                const score = s.avg_score ?? 0;
+                const dotClass = score >= 70 ? '' : score >= 50 ? 'mid' : 'low';
+                return `
+            <li class="session-item" onclick="loadSession('${s.session_id}', this)">
+                <div class="session-item-top">
+                    <div class="session-item-title">${escapeHtml(s.goal || s.session_id)}</div>
+                    <button class="session-delete" onclick="deleteSession(event, '${s.session_id}')">✕</button>
                 </div>
-                <div class="results-body" id="resultsBody">
-                    <div class="results-welcome" id="resultsWelcome">
-                        <div class="icon">✨</div>
-                        <h3>Results will appear here</h3>
-                        <p>Execute a goal to see the scorecard, task results, and generated artifacts.</p>
-                    </div>
-                    <div id="resultsContent" style="display:none;"></div>
-                    <div id="artifactsContent" style="display:none;"></div>
+                <div class="session-item-meta">
+                    <span class="session-score-dot ${dotClass}"></span>
+                    <span>⏱ ${s.total_time_s || '?'}s</span>
+                    <span>📄 ${(s.final_artifacts || []).length} files</span>
                 </div>
-            </div>
+            </li>
+        `;
+            }).join('');
+        }
+
+        async function deleteSession(e, sessionId) {
+            e.stopPropagation();
+            try {
+                await fetch(`${API_BASE}/api/sessions/${sessionId}`, { method: 'DELETE' });
+                toast('info', 'Session deleted');
+                loadSessions();
+            } catch {
+                toast('warning', 'Could not delete session');
+            }
+        }
+
+        async function loadSession(sessionId, el) {
+            document.querySelectorAll('.session-item').forEach(e => e.classList.remove('active'));
+            if (el) el.classList.add('active');
+            try {
+                const resp = await fetch(`${API_BASE}/api/sessions/${sessionId}/manifest`);
+                const manifest = await resp.json();
+                currentSessionId = sessionId;
+
+                const tasks = manifest.tasks || [];
+                const artifacts = {};
+                for (const fname of (manifest.final_artifacts || [])) {
+                    try {
+                        const r = await fetch(`${API_BASE}/api/sessions/${sessionId}/artifacts/${fname}`);
+                        if (r.ok) artifacts[fname] = await r.text();
+                    } catch { }
+                }
+
+                const done = tasks.filter(t => t.status === 'done').length;
+                const failed = tasks.filter(t => t.status === 'failed').length;
+                const scores = tasks.filter(t => typeof t.score === 'number').map(t => t.score);
+                const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+
+                currentArtifacts = artifacts;
+                renderResults({ total_tasks: tasks.length, completed: done, failed, avg_score: Math.round(avg * 10) / 10 }, tasks);
+                renderArtifacts(artifacts);
+
+                clearTerminal();
+                appendTerminalLine(`📂 Session: ${sessionId}`, 'event-agent');
+                appendTerminalLine(`🎯 Goal: ${manifest.goal || 'N/A'}`, 'event-log');
+                appendTerminalLine(`⏱ Time: ${manifest.summary?.total_time_s || '?'}s`, 'event-log');
+                appendTerminalLine(`📄 Artifacts: ${(manifest.final_artifacts || []).join(', ') || 'none'}`, 'event-success');
+                toast('success', 'Session loaded');
+            } catch {
+                toast('error', 'Load failed', 'Could not fetch session data');
+            }
+        }
+
+        // ══ EXECUTE SWARM ══
+        async function executeSwarm() {
+            const input = document.getElementById('promptInput');
+            const btn = document.getElementById('executeBtn');
+            const goal = input.value.trim();
+            if (!goal || isRunning) return;
+
+            isRunning = true;
+            btn.classList.add('running');
+            btn.disabled = true;
+            document.getElementById('terminalDot').classList.add('running');
+            startProgressBar();
+            resetAgentCards();
+
+            clearTerminal();
+            appendTerminalLine(`🚀 NexusSentry swarm initializing…`, 'event-agent');
+            appendTerminalLine(`🎯 Goal: ${goal}`, 'event-log');
+            appendTerminalLine(`${'─'.repeat(52)}`, 'event-log');
+
+            document.getElementById('resultsWelcome').style.display = 'none';
+            document.getElementById('resultsContent').style.display = 'block';
+            document.getElementById('resultsContent').innerHTML = `
+        <div class="results-welcome">
+            <div class="icon" style="animation:spin 2s linear infinite;">⚙️</div>
+            <h3>Swarm Running…</h3>
+            <p>Watch the terminal for real-time agent output.</p>
         </div>
-    </main>
-</div>
+    `;
 
-<script>
-    // ═══════════════════════════════════════════════════════
-    //  NexusSentry Frontend Logic
-    // ═══════════════════════════════════════════════════════
+            try {
+                const response = await fetch(`${API_BASE}/api/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ goal }),
+                });
 
-    const API_BASE = window.location.origin;
-    let autoScroll = true;
-    let isRunning = false;
-    let currentArtifacts = {};
-    let currentSessionId = null;
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
 
-    // ── Initialize ──
-    document.addEventListener('DOMContentLoaded', () => {
-        loadSessions();
-        checkHealth();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try { handleSSEEvent(JSON.parse(line.slice(6))); } catch { }
+                        }
+                    }
+                }
+            } catch (e) {
+                appendTerminalLine(`❌ Connection error: ${e.message}`, 'event-error');
+                toast('error', 'Connection failed', e.message);
+            } finally {
+                isRunning = false;
+                btn.classList.remove('running');
+                btn.disabled = false;
+                document.getElementById('terminalDot').classList.remove('running');
+                stopProgressBar();
+                loadSessions();
+            }
+        }
 
-        // Enter key to execute
-        document.getElementById('promptInput').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                executeSwarm();
+        // ══ SSE EVENTS ══
+        function handleSSEEvent(event) {
+            switch (event.type) {
+                case 'start':
+                    appendTerminalLine(`✅ Run started (id: ${event.run_id})`, 'event-success');
+                    break;
+                case 'log':
+                    appendTerminalLine(event.data, classifyLogLine(event.data));
+                    updateAgentCardsFromLog(event.data);
+                    break;
+                case 'heartbeat':
+                    break;
+                case 'complete':
+                    appendTerminalLine(`${'─'.repeat(52)}`, 'event-log');
+                    appendTerminalLine(`✅ Swarm complete!`, 'event-success');
+                    appendTerminalLine(`📊 Score: ${event.scorecard.avg_score}/100 | Tasks: ${event.scorecard.completed}/${event.scorecard.total_tasks}`, 'event-success');
+                    currentArtifacts = event.artifacts || {};
+                    currentSessionId = event.session_id;
+                    renderResults(event.scorecard, event.tasks);
+                    renderArtifacts(event.artifacts || {});
+                    toast('success', 'Swarm complete!', `Score: ${event.scorecard.avg_score}/100`);
+                    markAllAgentsDone();
+                    break;
+                case 'error':
+                    appendTerminalLine(`❌ Error: ${event.error}`, 'event-error');
+                    if (event.traceback) appendTerminalLine(event.traceback, 'event-error');
+                    toast('error', 'Swarm error', event.error?.substring(0, 80));
+                    break;
+            }
+        }
+
+        function classifyLogLine(text) {
+            if (text.includes('✅') || text.includes('complete') || text.includes('APPROVED')) return 'event-success';
+            if (text.includes('❌') || text.includes('Error') || text.includes('FAILED') || text.includes('failed')) return 'event-error';
+            if (text.includes('⚠️') || text.includes('WARNING') || text.includes('Retrying')) return 'event-warning';
+            if (text.includes('🛡️') || text.includes('Guardian') || text.includes('Security') || text.includes('Constitutional')) return 'event-security';
+            if (text.includes('Scout') || text.includes('Architect') || text.includes('Builder') || text.includes('Critic') || text.includes('Agent') || text.includes('📌') || text.includes('🔀')) return 'event-agent';
+            return 'event-log';
+        }
+
+        // ══ AGENT CARDS ══
+        const agentNames = ['Scout', 'Architect', 'Builder', 'Critic', 'Guardian'];
+
+        function resetAgentCards() {
+            document.querySelectorAll('.agent-card').forEach(c => { c.className = 'agent-card idle'; });
+        }
+
+        function updateAgentCardsFromLog(text) {
+            agentNames.forEach((name, idx) => {
+                if (text.includes(name)) {
+                    const cards = document.querySelectorAll('.agent-card');
+                    if (cards[idx]) {
+                        if (text.includes('✅') || text.includes('complete')) {
+                            cards[idx].className = 'agent-card done';
+                        } else if (text.includes('❌') || text.includes('failed')) {
+                            cards[idx].className = 'agent-card error';
+                        } else {
+                            cards[idx].className = 'agent-card active';
+                        }
+                    }
+                }
+            });
+        }
+
+        function markAllAgentsDone() {
+            document.querySelectorAll('.agent-card').forEach(c => {
+                if (c.classList.contains('active') || c.classList.contains('idle')) {
+                    c.className = 'agent-card done';
+                }
+            });
+        }
+
+        // ══ PROGRESS BAR ══
+        function startProgressBar() {
+            const bar = document.getElementById('progressBar');
+            bar.style.width = '0%';
+            bar.className = 'progress-bar indeterminate';
+        }
+
+        function stopProgressBar() {
+            const bar = document.getElementById('progressBar');
+            bar.className = 'progress-bar';
+            bar.style.width = '100%';
+            setTimeout(() => { bar.style.width = '0%'; }, 600);
+        }
+
+        // ══ TERMINAL ══
+        function appendTerminalLine(text, className = 'event-log') {
+            const terminal = document.getElementById('terminalBody');
+            const welcome = terminal.querySelector('.terminal-welcome');
+            if (welcome) welcome.remove();
+
+            terminalLines.push({ text, className });
+
+            // Respect filter
+            if (currentFilter !== 'all' && className !== `event-${currentFilter}`) return;
+
+            const now = new Date();
+            const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+            const line = document.createElement('div');
+            line.className = `terminal-line ${className}`;
+            line.dataset.text = text;
+            line.innerHTML = `<span class="terminal-timestamp">${ts}</span>${escapeHtml(text)}`;
+            terminal.appendChild(line);
+
+            if (autoScroll) terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function clearTerminal() {
+            document.getElementById('terminalBody').innerHTML = '';
+            terminalLines = [];
+            searchMatchIndices = [];
+            searchCurrentIdx = -1;
+            updateSearchCount();
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            const btn = document.getElementById('autoScrollBtn');
+            btn.textContent = autoScroll ? '↓ Auto' : '↓ Off';
+            btn.classList.toggle('active', autoScroll);
+        }
+
+        function filterTerminal(type) {
+            currentFilter = type;
+            document.getElementById('filterAll').classList.toggle('active', type === 'all');
+            document.getElementById('filterErr').classList.toggle('active', type === 'error');
+
+            const terminal = document.getElementById('terminalBody');
+            terminal.innerHTML = '';
+            terminalLines.forEach(({ text, className }) => {
+                if (type === 'all' || className === `event-${type}`) {
+                    const now = new Date();
+                    const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+                    const line = document.createElement('div');
+                    line.className = `terminal-line ${className}`;
+                    line.dataset.text = text;
+                    line.innerHTML = `<span class="terminal-timestamp">${ts}</span>${escapeHtml(text)}`;
+                    terminal.appendChild(line);
+                }
+            });
+        }
+
+        // ══ TERMINAL SEARCH ══
+        let searchVisible = false;
+
+        function toggleTerminalSearch(forceOpen) {
+            const bar = document.getElementById('terminalSearchBar');
+            const input = document.getElementById('terminalSearchInput');
+            searchVisible = forceOpen !== undefined ? forceOpen : !searchVisible;
+            bar.classList.toggle('visible', searchVisible);
+            if (searchVisible) {
+                input.focus();
+                searchTerminal();
+            } else {
+                clearSearchHighlights();
+                input.value = '';
+            }
+        }
+
+        function searchTerminal() {
+            clearSearchHighlights();
+            const q = document.getElementById('terminalSearchInput').value.toLowerCase().trim();
+            if (!q) { searchMatchIndices = []; searchCurrentIdx = -1; updateSearchCount(); return; }
+
+            const lines = document.querySelectorAll('#terminalBody .terminal-line');
+            searchMatchIndices = [];
+            lines.forEach((line, i) => {
+                const txt = (line.dataset.text || line.textContent).toLowerCase();
+                if (txt.includes(q)) {
+                    line.classList.add('highlight-match');
+                    searchMatchIndices.push(i);
+                }
+            });
+            searchCurrentIdx = searchMatchIndices.length > 0 ? 0 : -1;
+            scrollToSearchMatch();
+            updateSearchCount();
+        }
+
+        function clearSearchHighlights() {
+            document.querySelectorAll('#terminalBody .terminal-line.highlight-match, #terminalBody .terminal-line.highlight-current')
+                .forEach(el => { el.classList.remove('highlight-match'); el.classList.remove('highlight-current'); });
+        }
+
+        function navSearch(dir) {
+            if (!searchMatchIndices.length) return;
+            searchCurrentIdx = (searchCurrentIdx + dir + searchMatchIndices.length) % searchMatchIndices.length;
+            scrollToSearchMatch();
+            updateSearchCount();
+        }
+
+        function scrollToSearchMatch() {
+            if (searchCurrentIdx < 0) return;
+            // Remove previous current highlight
+            document.querySelectorAll('#terminalBody .terminal-line.highlight-current').forEach(el => el.classList.remove('highlight-current'));
+            const idx = searchMatchIndices[searchCurrentIdx];
+            const lines = document.querySelectorAll('#terminalBody .terminal-line');
+            if (lines[idx]) {
+                lines[idx].classList.add('highlight-current');
+                lines[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+        }
+
+        function updateSearchCount() {
+            const el = document.getElementById('searchCount');
+            if (!el) return;
+            const total = searchMatchIndices.length;
+            if (!total) { el.textContent = '0 matches'; return; }
+            el.textContent = `${searchCurrentIdx + 1} / ${total}`;
+        }
+
+        // Handle Enter/arrow keys inside search input
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchInput = document.getElementById('terminalSearchInput');
+            if (searchInput) {
+                searchInput.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') { e.preventDefault(); navSearch(e.shiftKey ? -1 : 1); }
+                    if (e.key === 'Escape') { toggleTerminalSearch(false); }
+                });
             }
         });
-    });
 
-    // ── Health Check ──
-    async function checkHealth() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/health`);
-            const data = await resp.json();
-            const badge = document.getElementById('systemStatus');
-            if (data.status === 'ok') {
-                const providerText = data.mock_mode ? 'Mock Mode' : `${data.providers.length} Providers`;
-                badge.querySelector('span').textContent = `Online · ${providerText}`;
-            }
-        } catch (e) {
-            const badge = document.getElementById('systemStatus');
-            badge.style.borderColor = 'rgba(239, 68, 68, 0.3)';
-            badge.style.background = 'rgba(239, 68, 68, 0.1)';
-            badge.style.color = '#ef4444';
-            badge.querySelector('span').textContent = 'Offline';
+        // ══ CHAR COUNT ══
+        function updateCharCount(ta) {
+            const count = ta.value.length;
+            const el = document.getElementById('charCount');
+            el.textContent = `${count} / 2000`;
+            el.classList.toggle('warn', count > 1800);
         }
-    }
 
-    // ── Load Sessions ──
-    async function loadSessions() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/sessions`);
-            const data = await resp.json();
-            const list = document.getElementById('sessionList');
+        // ══ RENDER RESULTS ══
+        function renderResults(scorecard, tasks) {
+            document.getElementById('resultsWelcome').style.display = 'none';
+            const content = document.getElementById('resultsContent');
+            content.style.display = 'block';
 
-            if (!data.sessions || data.sessions.length === 0) {
-                list.innerHTML = '<li class="sidebar-empty">No sessions yet. Run your first goal!</li>';
+            let html = `
+        <div class="scorecard">
+            <div class="score-card"><div class="score-value">${scorecard.total_tasks || 0}</div><div class="score-label">Total Tasks</div></div>
+            <div class="score-card"><div class="score-value">${scorecard.completed || 0}</div><div class="score-label">Completed</div></div>
+            <div class="score-card"><div class="score-value">${scorecard.failed || 0}</div><div class="score-label">Failed</div></div>
+            <div class="score-card"><div class="score-value">${scorecard.avg_score || 0}</div><div class="score-label">Avg Score</div></div>
+        </div>
+    `;
+
+            if (tasks && tasks.length) {
+                html += `<div class="task-results"><div class="section-title">📋 Task Results</div>`;
+                for (const task of tasks) {
+                    const icon = { done: '✅', failed: '❌', partial_output: '⏹️', skipped: '⏭️', human_approved: '👤' }[task.status] || '❓';
+                    const score = task.score || 0;
+                    const scoreClass = score >= 70 ? '' : score >= 50 ? 'mid' : 'low';
+                    html += `
+                <div class="task-card">
+                    <div class="task-status-icon">${icon}</div>
+                    <div class="task-info">
+                        <div class="task-name">${escapeHtml(task.task || '')}</div>
+                        <div class="task-meta">${task.attempts || 0} attempts · ${(task.execution_mode || '').toUpperCase()}</div>
+                    </div>
+                    <div class="task-score ${scoreClass}">${score}/100</div>
+                </div>
+            `;
+                }
+                html += `</div>`;
+            }
+            content.innerHTML = html;
+        }
+
+        // ══ RENDER ARTIFACTS ══
+        function renderArtifacts(artifacts) {
+            const content = document.getElementById('artifactsContent');
+            const filenames = Object.keys(artifacts);
+
+            if (!filenames.length) {
+                content.innerHTML = `<div class="results-welcome"><div class="icon">📭</div><h3>No artifacts</h3><p>No files were generated in this run.</p></div>`;
                 return;
             }
 
-            list.innerHTML = data.sessions.map(s => `
-                <li class="session-item" onclick="loadSession('${s.session_id}')">
-                    <div class="session-item-title">${escapeHtml(s.goal || s.session_id)}</div>
-                    <div class="session-item-meta">
-                        <span>⏱ ${s.total_time_s || '?'}s</span>
-                        <span>📄 ${(s.final_artifacts || []).length} files</span>
-                    </div>
-                </li>
-            `).join('');
-        } catch (e) {
-            document.getElementById('sessionList').innerHTML =
-                '<li class="sidebar-empty">Could not load sessions</li>';
-        }
-    }
-
-    // ── Load a past session ──
-    async function loadSession(sessionId) {
-        try {
-            const resp = await fetch(`${API_BASE}/api/sessions/${sessionId}/manifest`);
-            const manifest = await resp.json();
-
-            // Mark active
-            document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
-            event.currentTarget?.classList.add('active');
-
-            currentSessionId = sessionId;
-
-            // Build results from manifest
-            const tasks = manifest.tasks || [];
-            const artifacts = {};
-
-            // Fetch artifacts
-            for (const fname of (manifest.final_artifacts || [])) {
-                try {
-                    const artResp = await fetch(`${API_BASE}/api/sessions/${sessionId}/artifacts/${fname}`);
-                    if (artResp.ok) {
-                        artifacts[fname] = await artResp.text();
-                    }
-                } catch (e) {}
-            }
-
-            const done = tasks.filter(t => t.status === 'done').length;
-            const failed = tasks.filter(t => t.status === 'failed').length;
-            const scores = tasks.filter(t => typeof t.score === 'number').map(t => t.score);
-            const avg = scores.length ? (scores.reduce((a,b) => a+b, 0) / scores.length) : 0;
-
-            currentArtifacts = artifacts;
-            renderResults({
-                total_tasks: tasks.length,
-                completed: done,
-                failed,
-                avg_score: Math.round(avg * 10) / 10,
-            }, tasks);
-            renderArtifacts(artifacts);
-
-            // Show terminal info
-            const terminal = document.getElementById('terminalBody');
-            terminal.innerHTML = '';
-            appendTerminalLine(`📂 Loaded session: ${sessionId}`, 'event-agent');
-            appendTerminalLine(`🎯 Goal: ${manifest.goal || 'N/A'}`, 'event-log');
-            appendTerminalLine(`⏱ Total time: ${manifest.summary?.total_time_s || '?'}s`, 'event-log');
-            appendTerminalLine(`📄 Artifacts: ${(manifest.final_artifacts || []).join(', ')}`, 'event-success');
-        } catch (e) {
-            console.error('Failed to load session:', e);
-        }
-    }
-
-    // ── Execute Swarm ──
-    async function executeSwarm() {
-        const input = document.getElementById('promptInput');
-        const btn = document.getElementById('executeBtn');
-        const goal = input.value.trim();
-
-        if (!goal || isRunning) return;
-
-        isRunning = true;
-        btn.classList.add('running');
-        btn.disabled = true;
-        document.getElementById('terminalDot').classList.add('running');
-
-        // Clear terminal
-        clearTerminal();
-        appendTerminalLine(`🚀 Starting NexusSentry swarm...`, 'event-agent');
-        appendTerminalLine(`🎯 Goal: ${goal}`, 'event-log');
-        appendTerminalLine(`${'─'.repeat(50)}`, 'event-log');
-
-        // Clear results
-        document.getElementById('resultsWelcome').style.display = 'none';
-        document.getElementById('resultsContent').style.display = 'block';
-        document.getElementById('resultsContent').innerHTML = `
-            <div class="results-welcome">
-                <div class="icon" style="animation: spin 2s linear infinite;">⚙️</div>
-                <h3>Swarm Running...</h3>
-                <p>Watch the terminal for real-time agent output.</p>
+            let html = `
+        <div class="artifact-section">
+            <div class="section-title">📄 Generated Artifacts</div>
+            <div class="artifact-tabs">
+                ${filenames.map((f, i) => `<div class="artifact-tab ${i === 0 ? 'active' : ''}" onclick="switchArtifactTab('${escapeAttr(f)}', this)">${escapeHtml(f)}</div>`).join('')}
             </div>
-        `;
+            <div id="artifactPreviewArea"></div>
+        </div>
+    `;
+            content.innerHTML = html;
+            if (filenames.length) showArtifact(filenames[0]);
+        }
 
-        try {
-            const response = await fetch(`${API_BASE}/api/run`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ goal }),
+        function switchArtifactTab(filename, tabEl) {
+            document.querySelectorAll('.artifact-tab').forEach(t => t.classList.remove('active'));
+            tabEl.classList.add('active');
+            showArtifact(filename);
+        }
+
+        function showArtifact(filename) {
+            const area = document.getElementById('artifactPreviewArea');
+            const content = currentArtifacts[filename] || '';
+            const isHtml = filename.endsWith('.html') || filename.endsWith('.htm');
+
+            const toolbar = `
+        <div class="artifact-toolbar">
+            <button class="artifact-toolbar-btn" onclick="copyArtifact('${escapeAttr(filename)}')">📋 Copy</button>
+            <button class="artifact-toolbar-btn" onclick="downloadArtifact('${escapeAttr(filename)}')">⬇️ Download</button>
+            ${isHtml ? `<button class="artifact-toolbar-btn" onclick="openArtifactNewTab('${escapeAttr(filename)}')">↗ Open</button>` : ''}
+        </div>
+    `;
+
+            if (isHtml) {
+                const src = currentSessionId
+                    ? `src="${API_BASE}/api/sessions/${currentSessionId}/artifacts/${filename}"`
+                    : `srcdoc="${escapeAttr(content)}"`;
+                area.innerHTML = `
+            ${toolbar}
+            <div class="artifact-preview">
+                <iframe id="artifactFrame" ${src} sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+            <details style="margin-top:10px;">
+                <summary style="cursor:pointer;color:var(--text-muted);font-size:11px;padding:7px 0;user-select:none;">View Source</summary>
+                <div class="artifact-code">${escapeHtml(content)}</div>
+            </details>
+        `;
+            } else {
+                area.innerHTML = `${toolbar}<div class="artifact-code">${escapeHtml(content)}</div>`;
+            }
+        }
+
+        // ══ ARTIFACT ACTIONS ══
+        function copyArtifact(filename) {
+            const content = currentArtifacts[filename] || '';
+            navigator.clipboard.writeText(content)
+                .then(() => toast('success', 'Copied!', filename))
+                .catch(() => toast('error', 'Copy failed'));
+        }
+
+        function downloadArtifact(filename) {
+            const content = currentArtifacts[filename] || '';
+            const blob = new Blob([content], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            toast('success', 'Download started', filename);
+        }
+
+        function openArtifactNewTab(filename) {
+            if (currentSessionId) {
+                window.open(`${API_BASE}/api/sessions/${currentSessionId}/artifacts/${filename}`, '_blank');
+            } else {
+                const content = currentArtifacts[filename] || '';
+                const blob = new Blob([content], { type: 'text/html' });
+                window.open(URL.createObjectURL(blob), '_blank');
+            }
+        }
+
+        // ══ EXPORT & COPY ══
+        function exportSession() {
+            const lines = terminalLines.map(l => `[${l.className.replace('event-', '')}] ${l.text}`).join('\n');
+            const data = {
+                session_id: currentSessionId,
+                exported_at: new Date().toISOString(),
+                terminal_log: lines,
+                artifacts: Object.keys(currentArtifacts),
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `nexussentry-session-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            toast('success', 'Session exported');
+        }
+
+        function copyTerminalLog() {
+            const log = terminalLines.map(l => l.text).join('\n');
+            if (!log) { toast('warning', 'Terminal is empty'); return; }
+            navigator.clipboard.writeText(log)
+                .then(() => toast('success', 'Terminal log copied!'))
+                .catch(() => toast('error', 'Copy failed'));
+        }
+
+        // ══ RESULT VIEW TOGGLE ══
+        function switchResultView(view, btnEl) {
+            document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.remove('active'));
+            btnEl.classList.add('active');
+            document.getElementById('resultsContent').style.display = view === 'results' ? 'block' : 'none';
+            document.getElementById('artifactsContent').style.display = view === 'artifacts' ? 'block' : 'none';
+        }
+
+        // ══ PRESET PROMPTS ══
+        function usePreset(el) {
+            const ta = document.getElementById('promptInput');
+            ta.value = el.textContent;
+            ta.focus();
+            updateCharCount(ta);
+            ta.style.height = '44px';
+            ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
+        }
+
+        // ══ RESIZABLE PANELS ══
+        function initResizablePanels() {
+            const divider = document.getElementById('resizeDivider');
+            const termPanel = document.getElementById('terminalPanel');
+            const outputArea = document.getElementById('outputArea');
+            let dragging = false, startX = 0, startWidth = 0;
+
+            divider.addEventListener('mousedown', e => {
+                dragging = true;
+                startX = e.clientX;
+                startWidth = termPanel.offsetWidth;
+                divider.classList.add('dragging');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
             });
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
+            document.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                const dx = e.clientX - startX;
+                const total = outputArea.offsetWidth;
+                const newW = Math.min(Math.max(startWidth + dx, 200), total - 205);
+                termPanel.style.width = newW + 'px';
+            });
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-
-                // Parse SSE events
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const event = JSON.parse(line.slice(6));
-                            handleSSEEvent(event);
-                        } catch (e) {}
-                    }
-                }
-            }
-        } catch (e) {
-            appendTerminalLine(`❌ Connection error: ${e.message}`, 'event-error');
-        } finally {
-            isRunning = false;
-            btn.classList.remove('running');
-            btn.disabled = false;
-            document.getElementById('terminalDot').classList.remove('running');
-            loadSessions(); // Refresh sidebar
-        }
-    }
-
-    // ── Handle SSE Events ──
-    function handleSSEEvent(event) {
-        switch (event.type) {
-            case 'start':
-                appendTerminalLine(`✅ Run started (id: ${event.run_id})`, 'event-success');
-                break;
-
-            case 'log':
-                const logClass = classifyLogLine(event.data);
-                appendTerminalLine(event.data, logClass);
-                break;
-
-            case 'heartbeat':
-                // Silent keepalive
-                break;
-
-            case 'complete':
-                appendTerminalLine(`${'─'.repeat(50)}`, 'event-log');
-                appendTerminalLine(`✅ Swarm complete!`, 'event-success');
-                appendTerminalLine(`📊 Score: ${event.scorecard.avg_score}/100 | Tasks: ${event.scorecard.completed}/${event.scorecard.total_tasks}`, 'event-success');
-
-                currentArtifacts = event.artifacts || {};
-                currentSessionId = event.session_id;
-                renderResults(event.scorecard, event.tasks);
-                renderArtifacts(event.artifacts || {});
-                break;
-
-            case 'error':
-                appendTerminalLine(`❌ Error: ${event.error}`, 'event-error');
-                if (event.traceback) {
-                    appendTerminalLine(event.traceback, 'event-error');
-                }
-                break;
-        }
-    }
-
-    // ── Classify log lines for coloring ──
-    function classifyLogLine(text) {
-        if (text.includes('✅') || text.includes('complete') || text.includes('APPROVED')) return 'event-success';
-        if (text.includes('❌') || text.includes('Error') || text.includes('FAILED') || text.includes('failed')) return 'event-error';
-        if (text.includes('⚠️') || text.includes('WARNING') || text.includes('⏰') || text.includes('Retrying')) return 'event-warning';
-        if (text.includes('🛡️') || text.includes('Guardian') || text.includes('Security') || text.includes('Constitutional')) return 'event-security';
-        if (text.includes('Scout') || text.includes('Architect') || text.includes('Builder') || text.includes('Critic') || text.includes('Agent') || text.includes('📌') || text.includes('🔀')) return 'event-agent';
-        return 'event-log';
-    }
-
-    // ── Terminal Operations ──
-    function appendTerminalLine(text, className = 'event-log') {
-        const terminal = document.getElementById('terminalBody');
-        const welcome = terminal.querySelector('.terminal-welcome');
-        if (welcome) welcome.remove();
-
-        const line = document.createElement('div');
-        line.className = `terminal-line ${className}`;
-        line.textContent = text;
-        terminal.appendChild(line);
-
-        if (autoScroll) {
-            terminal.scrollTop = terminal.scrollHeight;
-        }
-    }
-
-    function clearTerminal() {
-        document.getElementById('terminalBody').innerHTML = '';
-    }
-
-    function toggleAutoScroll() {
-        autoScroll = !autoScroll;
-        document.getElementById('autoScrollBtn').textContent = autoScroll ? 'Auto-scroll ✓' : 'Auto-scroll ✗';
-    }
-
-    // ── Render Results ──
-    function renderResults(scorecard, tasks) {
-        document.getElementById('resultsWelcome').style.display = 'none';
-        const content = document.getElementById('resultsContent');
-        content.style.display = 'block';
-
-        let html = `
-            <div class="scorecard">
-                <div class="score-card">
-                    <div class="score-value">${scorecard.total_tasks || 0}</div>
-                    <div class="score-label">Total Tasks</div>
-                </div>
-                <div class="score-card">
-                    <div class="score-value">${scorecard.completed || 0}</div>
-                    <div class="score-label">Completed</div>
-                </div>
-                <div class="score-card">
-                    <div class="score-value">${scorecard.failed || 0}</div>
-                    <div class="score-label">Failed</div>
-                </div>
-                <div class="score-card">
-                    <div class="score-value">${scorecard.avg_score || 0}</div>
-                    <div class="score-label">Avg Score</div>
-                </div>
-            </div>
-        `;
-
-        if (tasks && tasks.length > 0) {
-            html += `<div class="task-results"><div class="section-title">📋 Task Results</div>`;
-            for (const task of tasks) {
-                const statusIcon = {
-                    done: '✅', failed: '❌', partial_output: '⏹️',
-                    skipped: '⏭️', human_approved: '👤'
-                }[task.status] || '❓';
-
-                const score = task.score || 0;
-                const scoreClass = score >= 70 ? '' : score >= 50 ? 'mid' : 'low';
-
-                html += `
-                    <div class="task-card">
-                        <div class="task-status-icon">${statusIcon}</div>
-                        <div class="task-info">
-                            <div class="task-name">${escapeHtml(task.task || '')}</div>
-                            <div class="task-meta">${task.attempts || 0} attempts · ${(task.execution_mode || '').toUpperCase()}</div>
-                        </div>
-                        <div class="task-score ${scoreClass}">${score}/100</div>
-                    </div>
-                `;
-            }
-            html += `</div>`;
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false;
+                divider.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            });
         }
 
-        content.innerHTML = html;
-    }
-
-    // ── Render Artifacts ──
-    function renderArtifacts(artifacts) {
-        const content = document.getElementById('artifactsContent');
-        const filenames = Object.keys(artifacts);
-
-        if (filenames.length === 0) {
-            content.innerHTML = `
-                <div class="results-welcome">
-                    <div class="icon">📭</div>
-                    <h3>No artifacts</h3>
-                    <p>No files were generated in this run.</p>
-                </div>
-            `;
-            return;
+        // ══ UTILS ══
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
         }
 
-        let html = `
-            <div class="artifact-section">
-                <div class="section-title">📄 Generated Artifacts</div>
-                <div class="artifact-tabs">
-                    ${filenames.map((f, i) => `
-                        <div class="artifact-tab ${i === 0 ? 'active' : ''}" onclick="switchArtifactTab('${f}', this)">${f}</div>
-                    `).join('')}
-                </div>
-                <div id="artifactPreviewArea"></div>
-            </div>
-        `;
-
-        content.innerHTML = html;
-
-        // Show first artifact
-        if (filenames.length > 0) {
-            showArtifact(filenames[0]);
+        function escapeAttr(text) {
+            return String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
-    }
-
-    function switchArtifactTab(filename, tabEl) {
-        document.querySelectorAll('.artifact-tab').forEach(t => t.classList.remove('active'));
-        tabEl.classList.add('active');
-        showArtifact(filename);
-    }
-
-    function showArtifact(filename) {
-        const area = document.getElementById('artifactPreviewArea');
-        const content = currentArtifacts[filename] || '';
-        const isHtml = filename.endsWith('.html') || filename.endsWith('.htm');
-
-        if (isHtml) {
-            // If we have a session ID, use the API URL for iframe (avoids CSP issues)
-            if (currentSessionId) {
-                area.innerHTML = `
-                    <div class="artifact-preview">
-                        <iframe id="artifactFrame" src="${API_BASE}/api/sessions/${currentSessionId}/artifacts/${filename}" sandbox="allow-scripts allow-same-origin"></iframe>
-                    </div>
-                    <details style="margin-top:12px;">
-                        <summary style="cursor:pointer;color:var(--text-muted);font-size:12px;padding:8px 0;">View Source Code</summary>
-                        <div class="artifact-code">${escapeHtml(content)}</div>
-                    </details>
-                `;
-            } else {
-                // Fallback: use srcdoc for inline content
-                area.innerHTML = `
-                    <div class="artifact-preview">
-                        <iframe id="artifactFrame" srcdoc="${escapeAttr(content)}" sandbox="allow-scripts"></iframe>
-                    </div>
-                    <details style="margin-top:12px;">
-                        <summary style="cursor:pointer;color:var(--text-muted);font-size:12px;padding:8px 0;">View Source Code</summary>
-                        <div class="artifact-code">${escapeHtml(content)}</div>
-                    </details>
-                `;
-            }
-        } else {
-            area.innerHTML = `<div class="artifact-code">${escapeHtml(content)}</div>`;
-        }
-    }
-
-    // ── Result View Toggle ──
-    function switchResultView(view, btnEl) {
-        document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.remove('active'));
-        btnEl.classList.add('active');
-
-        document.getElementById('resultsContent').style.display = view === 'results' ? 'block' : 'none';
-        document.getElementById('artifactsContent').style.display = view === 'artifacts' ? 'block' : 'none';
-    }
-
-    // ── Preset Prompts ──
-    function usePreset(el) {
-        document.getElementById('promptInput').value = el.textContent;
-        document.getElementById('promptInput').focus();
-    }
-
-    // ── Utilities ──
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    function escapeAttr(text) {
-        return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-</script>
+    </script>
 
 </body>
+
 </html>
