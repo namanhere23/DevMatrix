@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from .models import (
     ArtifactsResponse,
@@ -60,6 +63,51 @@ def create_app(service: RunService | None = None) -> FastAPI:
     @app.get("/api/v1/runs/{run_id}/events", response_model=EventsResponse)
     async def get_events_endpoint(run_id: str, cursor: int = 0, limit: int = 200):
         return app.state.run_service.list_events(run_id, cursor=cursor, limit=limit)
+
+    @app.get("/api/v1/runs/{run_id}/stream")
+    async def stream_events_endpoint(
+        run_id: str,
+        request: Request,
+        cursor: int = 0,
+        poll_interval_ms: int = 1000,
+    ):
+        app.state.run_service.get_run(run_id)
+        poll_seconds = max(0.1, poll_interval_ms / 1000)
+
+        async def event_stream():
+            next_cursor = max(0, cursor)
+            terminal_statuses = {"completed", "failed", "stopped"}
+
+            while True:
+                if await request.is_disconnected():
+                    break
+
+                batch = app.state.run_service.list_events(run_id, cursor=next_cursor, limit=200)
+                for item in batch["events"]:
+                    payload = json.dumps(item, separators=(",", ":"), default=str)
+                    yield f"event: run_event\ndata: {payload}\n\n"
+
+                next_cursor = batch["next_cursor"]
+                run = app.state.run_service.get_run(run_id)
+                if run["status"] in terminal_statuses and next_cursor >= batch["total"]:
+                    summary = json.dumps(
+                        {
+                            "run_id": run_id,
+                            "status": run["status"],
+                            "completed_at": run.get("completed_at"),
+                        },
+                        separators=(",", ":"),
+                        default=str,
+                    )
+                    yield f"event: run_completed\ndata: {summary}\n\n"
+                    break
+
+                if not batch["events"]:
+                    yield ": keepalive\n\n"
+
+                await asyncio.sleep(poll_seconds)
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     @app.post(
         "/api/v1/runs/{run_id}/decision",
