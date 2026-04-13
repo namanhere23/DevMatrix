@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="NexusSentry v3.0 — Multi-Agent AI Orchestration Dashboard">
+    <title>NexusSentry — AI Agent Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* ═══════════════════════════════════════════════════════
+           DESIGN SYSTEM — NexusSentry Dark Theme
+           ═══════════════════════════════════════════════════════ */
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a28;
+            --bg-card: rgba(22, 22, 35, 0.7);
+            --bg-glass: rgba(255, 255, 255, 0.03);
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-accent: rgba(139, 92, 246, 0.3);
+
+            --text-primary: #f0f0f5;
+            --text-secondary: #9d9db5;
+            --text-muted: #5a5a75;
+            --text-accent: #a78bfa;
+
+            --accent-purple: #8b5cf6;
+            --accent-purple-glow: rgba(139, 92, 246, 0.4);
+            --accent-cyan: #06b6d4;
+            --accent-cyan-glow: rgba(6, 182, 212, 0.3);
+            --accent-green: #22c55e;
+            --accent-green-glow: rgba(34, 197, 94, 0.3);
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-pink: #ec4899;
+
+            --gradient-main: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 50%, #22c55e 100%);
+            --gradient-card: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(6, 182, 212, 0.04) 100%);
+            --gradient-button: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            --gradient-button-hover: linear-gradient(135deg, #a78bfa, #8b5cf6);
+
+            --shadow-glow: 0 0 40px rgba(139, 92, 246, 0.15);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
+            --shadow-button: 0 4px 20px rgba(139, 92, 246, 0.3);
+
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+
+            --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* ═══ Reset & Base ═══ */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* ═══ Animated Background ═══ */
+        .bg-mesh {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .bg-mesh::before {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.12), transparent 70%);
+            top: -200px;
+            right: -100px;
+            animation: float-orb 20s ease-in-out infinite;
+        }
+
+        .bg-mesh::after {
+            content: '';
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(6, 182, 212, 0.08), transparent 70%);
+            bottom: -150px;
+            left: -100px;
+            animation: float-orb 25s ease-in-out infinite reverse;
+        }
+
+        @keyframes float-orb {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(50px, -30px) scale(1.1); }
+            66% { transform: translate(-30px, 50px) scale(0.95); }
+        }
+
+        /* ═══ Layout ═══ */
+        .app-container {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            grid-template-rows: auto 1fr;
+            min-height: 100vh;
+            gap: 0;
+        }
+
+        /* ═══ Header ═══ */
+        .header {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 28px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            backdrop-filter: blur(20px);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .header-logo {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-sm);
+            background: var(--gradient-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: white;
+            box-shadow: var(--shadow-button);
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .header-title span {
+            background: var(--gradient-main);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            color: var(--accent-green);
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+            50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+        }
+
+        /* ═══ Sidebar ═══ */
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-subtle);
+            padding: 20px 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-section {
+            padding: 0 16px;
+            margin-bottom: 24px;
+        }
+
+        .sidebar-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            padding: 0 12px;
+            margin-bottom: 8px;
+        }
+
+        .session-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 16px;
+        }
+
+        .session-item {
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            border: 1px solid transparent;
+        }
+
+        .session-item:hover {
+            background: var(--bg-glass);
+            border-color: var(--border-subtle);
+        }
+
+        .session-item.active {
+            background: rgba(139, 92, 246, 0.08);
+            border-color: var(--border-accent);
+        }
+
+        .session-item-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.4;
+        }
+
+        .session-item-meta {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-empty {
+            padding: 16px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        /* ═══ Main Content ═══ */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ═══ Prompt Panel ═══ */
+        .prompt-panel {
+            padding: 24px 28px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--gradient-card);
+        }
+
+        .prompt-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .prompt-input-group {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .prompt-textarea {
+            flex: 1;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 14px 18px;
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            min-height: 56px;
+            max-height: 160px;
+            transition: all var(--transition-fast);
+            outline: none;
+        }
+
+        .prompt-textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .prompt-textarea:focus {
+            border-color: var(--accent-purple);
+            box-shadow: 0 0 0 3px var(--accent-purple-glow);
+        }
+
+        .btn-execute {
+            background: var(--gradient-button);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: var(--radius-md);
+            font-family: var(--font-sans);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            box-shadow: var(--shadow-button);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            letter-spacing: 0.02em;
+        }
+
+        .btn-execute:hover:not(:disabled) {
+            background: var(--gradient-button-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 28px rgba(139, 92, 246, 0.45);
+        }
+
+        .btn-execute:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-execute:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-execute .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+
+        .btn-execute.running .spinner {
+            display: block;
+        }
+
+        .btn-execute.running .btn-icon {
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ═══ Output Area ═══ */
+        .output-area {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        /* ═══ Terminal Panel ═══ */
+        .terminal-panel {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-subtle);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-tertiary);
+            flex-shrink: 0;
+        }
+
+        .panel-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-title-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .panel-title-dot.running {
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        .panel-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .panel-btn {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .panel-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--border-accent);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .terminal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.7;
+            background: var(--bg-primary);
+            scroll-behavior: smooth;
+        }
+
+        .terminal-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .terminal-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .terminal-body::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 3px;
+        }
+
+        .terminal-line {
+            padding: 1px 0;
+            word-break: break-word;
+            animation: fade-in 0.15s ease-out;
+        }
+
+        .terminal-line.event-log {
+            color: var(--text-secondary);
+        }
+
+        .terminal-line.event-agent {
+            color: var(--accent-cyan);
+        }
+
+        .terminal-line.event-success {
+            color: var(--accent-green);
+        }
+
+        .terminal-line.event-error {
+            color: var(--accent-red);
+        }
+
+        .terminal-line.event-warning {
+            color: var(--accent-orange);
+        }
+
+        .terminal-line.event-security {
+            color: var(--accent-pink);
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(2px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .terminal-welcome {
+            color: var(--text-muted);
+            padding: 40px 0;
+            text-align: center;
+            font-family: var(--font-sans);
+        }
+
+        .terminal-welcome h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .terminal-welcome p {
+            font-size: 13px;
+        }
+
+        /* ═══ Results Panel ═══ */
+        .results-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .results-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .results-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .results-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .results-body::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 3px;
+        }
+
+        /* ═══ Scorecard ═══ */
+        .scorecard {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .score-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            text-align: center;
+            transition: all var(--transition-fast);
+        }
+
+        .score-card:hover {
+            border-color: var(--border-accent);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .score-value {
+            font-size: 28px;
+            font-weight: 800;
+            background: var(--gradient-main);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .score-label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ═══ Task Results ═══ */
+        .task-results {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .task-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all var(--transition-fast);
+        }
+
+        .task-card:hover {
+            border-color: var(--border-accent);
+        }
+
+        .task-status-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .task-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .task-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .task-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .task-score {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent-green);
+            flex-shrink: 0;
+        }
+
+        .task-score.low {
+            color: var(--accent-red);
+        }
+
+        .task-score.mid {
+            color: var(--accent-orange);
+        }
+
+        /* ═══ Artifact Preview ═══ */
+        .artifact-section {
+            margin-bottom: 20px;
+        }
+
+        .artifact-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .artifact-tab {
+            padding: 6px 14px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            font-family: var(--font-mono);
+        }
+
+        .artifact-tab:hover {
+            border-color: var(--border-accent);
+            color: var(--text-primary);
+        }
+
+        .artifact-tab.active {
+            background: rgba(139, 92, 246, 0.12);
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+        }
+
+        .artifact-preview {
+            background: white;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            border: 1px solid var(--border-subtle);
+            min-height: 200px;
+        }
+
+        .artifact-preview iframe {
+            width: 100%;
+            height: 350px;
+            border: none;
+        }
+
+        .artifact-code {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            max-height: 350px;
+            overflow: auto;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .results-welcome {
+            color: var(--text-muted);
+            padding: 60px 20px;
+            text-align: center;
+            font-family: var(--font-sans);
+        }
+
+        .results-welcome .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .results-welcome h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .results-welcome p {
+            font-size: 13px;
+            max-width: 280px;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+
+        /* ═══ Preset Prompts ═══ */
+        .prompt-presets {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .preset-chip {
+            padding: 5px 12px;
+            border-radius: 100px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            font-family: var(--font-sans);
+        }
+
+        .preset-chip:hover {
+            border-color: var(--border-accent);
+            color: var(--text-accent);
+            background: rgba(139, 92, 246, 0.06);
+        }
+
+        /* ═══ View Toggle ═══ */
+        .view-toggle {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+
+        .view-toggle-btn {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .view-toggle-btn.active {
+            background: rgba(139, 92, 246, 0.1);
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+        }
+
+        /* ═══ Responsive ═══ */
+        @media (max-width: 1024px) {
+            .app-container {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                display: none;
+            }
+            .output-area {
+                grid-template-columns: 1fr;
+            }
+            .terminal-panel {
+                border-right: none;
+                border-bottom: 1px solid var(--border-subtle);
+                max-height: 45vh;
+            }
+            .scorecard {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="bg-mesh"></div>
+
+<div class="app-container">
+    <!-- ═══ Header ═══ -->
+    <header class="header">
+        <div class="header-brand">
+            <div class="header-logo">N</div>
+            <div>
+                <div class="header-title"><span>NexusSentry</span> v3.0</div>
+                <div class="header-subtitle">Multi-Agent AI Command Center</div>
+            </div>
+        </div>
+        <div class="header-status">
+            <div class="status-badge" id="systemStatus">
+                <div class="status-dot"></div>
+                <span>System Ready</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ═══ Sidebar ═══ -->
+    <aside class="sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-label">Recent Sessions</div>
+        </div>
+        <ul class="session-list" id="sessionList">
+            <li class="sidebar-empty">Loading sessions...</li>
+        </ul>
+    </aside>
+
+    <!-- ═══ Main Content ═══ -->
+    <main class="main-content">
+        <!-- Prompt Panel -->
+        <div class="prompt-panel">
+            <div class="prompt-label">
+                <span>🎯</span> Enter your goal for the AI agent swarm
+            </div>
+            <div class="prompt-input-group">
+                <textarea
+                    id="promptInput"
+                    class="prompt-textarea"
+                    placeholder="e.g. Create a modern portfolio website with dark theme, animations, and a contact form..."
+                    rows="2"
+                ></textarea>
+                <button id="executeBtn" class="btn-execute" onclick="executeSwarm()">
+                    <span class="btn-icon">⚡</span>
+                    <span class="spinner"></span>
+                    Execute
+                </button>
+            </div>
+            <div class="prompt-presets">
+                <span class="preset-chip" onclick="usePreset(this)">Create a portfolio website</span>
+                <span class="preset-chip" onclick="usePreset(this)">Build a todo app in single HTML</span>
+                <span class="preset-chip" onclick="usePreset(this)">Analyze Python app for SQL injection</span>
+                <span class="preset-chip" onclick="usePreset(this)">Create a dashboard with charts</span>
+            </div>
+        </div>
+
+        <!-- Output Area -->
+        <div class="output-area">
+            <!-- Terminal Panel -->
+            <div class="terminal-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <div class="panel-title-dot" id="terminalDot"></div>
+                        Agent Terminal
+                    </div>
+                    <div class="panel-actions">
+                        <button class="panel-btn" onclick="clearTerminal()">Clear</button>
+                        <button class="panel-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">Auto-scroll ✓</button>
+                    </div>
+                </div>
+                <div class="terminal-body" id="terminalBody">
+                    <div class="terminal-welcome">
+                        <h3>🤖 Agent Terminal</h3>
+                        <p>Real-time output from the NexusSentry swarm will appear here when you execute a goal.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="results-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        📊 Results & Artifacts
+                    </div>
+                    <div class="view-toggle">
+                        <button class="view-toggle-btn active" onclick="switchResultView('results', this)">Results</button>
+                        <button class="view-toggle-btn" onclick="switchResultView('artifacts', this)">Artifacts</button>
+                    </div>
+                </div>
+                <div class="results-body" id="resultsBody">
+                    <div class="results-welcome" id="resultsWelcome">
+                        <div class="icon">✨</div>
+                        <h3>Results will appear here</h3>
+                        <p>Execute a goal to see the scorecard, task results, and generated artifacts.</p>
+                    </div>
+                    <div id="resultsContent" style="display:none;"></div>
+                    <div id="artifactsContent" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+    // ═══════════════════════════════════════════════════════
+    //  NexusSentry Frontend Logic
+    // ═══════════════════════════════════════════════════════
+
+    const API_BASE = window.location.origin;
+    let autoScroll = true;
+    let isRunning = false;
+    let currentArtifacts = {};
+    let currentSessionId = null;
+
+    // ── Initialize ──
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSessions();
+        checkHealth();
+
+        // Enter key to execute
+        document.getElementById('promptInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                executeSwarm();
+            }
+        });
+    });
+
+    // ── Health Check ──
+    async function checkHealth() {
+        try {
+            const resp = await fetch(`${API_BASE}/api/health`);
+            const data = await resp.json();
+            const badge = document.getElementById('systemStatus');
+            if (data.status === 'ok') {
+                const providerText = data.mock_mode ? 'Mock Mode' : `${data.providers.length} Providers`;
+                badge.querySelector('span').textContent = `Online · ${providerText}`;
+            }
+        } catch (e) {
+            const badge = document.getElementById('systemStatus');
+            badge.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+            badge.style.background = 'rgba(239, 68, 68, 0.1)';
+            badge.style.color = '#ef4444';
+            badge.querySelector('span').textContent = 'Offline';
+        }
+    }
+
+    // ── Load Sessions ──
+    async function loadSessions() {
+        try {
+            const resp = await fetch(`${API_BASE}/api/sessions`);
+            const data = await resp.json();
+            const list = document.getElementById('sessionList');
+
+            if (!data.sessions || data.sessions.length === 0) {
+                list.innerHTML = '<li class="sidebar-empty">No sessions yet. Run your first goal!</li>';
+                return;
+            }
+
+            list.innerHTML = data.sessions.map(s => `
+                <li class="session-item" onclick="loadSession('${s.session_id}')">
+                    <div class="session-item-title">${escapeHtml(s.goal || s.session_id)}</div>
+                    <div class="session-item-meta">
+                        <span>⏱ ${s.total_time_s || '?'}s</span>
+                        <span>📄 ${(s.final_artifacts || []).length} files</span>
+                    </div>
+                </li>
+            `).join('');
+        } catch (e) {
+            document.getElementById('sessionList').innerHTML =
+                '<li class="sidebar-empty">Could not load sessions</li>';
+        }
+    }
+
+    // ── Load a past session ──
+    async function loadSession(sessionId) {
+        try {
+            const resp = await fetch(`${API_BASE}/api/sessions/${sessionId}/manifest`);
+            const manifest = await resp.json();
+
+            // Mark active
+            document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+            event.currentTarget?.classList.add('active');
+
+            currentSessionId = sessionId;
+
+            // Build results from manifest
+            const tasks = manifest.tasks || [];
+            const artifacts = {};
+
+            // Fetch artifacts
+            for (const fname of (manifest.final_artifacts || [])) {
+                try {
+                    const artResp = await fetch(`${API_BASE}/api/sessions/${sessionId}/artifacts/${fname}`);
+                    if (artResp.ok) {
+                        artifacts[fname] = await artResp.text();
+                    }
+                } catch (e) {}
+            }
+
+            const done = tasks.filter(t => t.status === 'done').length;
+            const failed = tasks.filter(t => t.status === 'failed').length;
+            const scores = tasks.filter(t => typeof t.score === 'number').map(t => t.score);
+            const avg = scores.length ? (scores.reduce((a,b) => a+b, 0) / scores.length) : 0;
+
+            currentArtifacts = artifacts;
+            renderResults({
+                total_tasks: tasks.length,
+                completed: done,
+                failed,
+                avg_score: Math.round(avg * 10) / 10,
+            }, tasks);
+            renderArtifacts(artifacts);
+
+            // Show terminal info
+            const terminal = document.getElementById('terminalBody');
+            terminal.innerHTML = '';
+            appendTerminalLine(`📂 Loaded session: ${sessionId}`, 'event-agent');
+            appendTerminalLine(`🎯 Goal: ${manifest.goal || 'N/A'}`, 'event-log');
+            appendTerminalLine(`⏱ Total time: ${manifest.summary?.total_time_s || '?'}s`, 'event-log');
+            appendTerminalLine(`📄 Artifacts: ${(manifest.final_artifacts || []).join(', ')}`, 'event-success');
+        } catch (e) {
+            console.error('Failed to load session:', e);
+        }
+    }
+
+    // ── Execute Swarm ──
+    async function executeSwarm() {
+        const input = document.getElementById('promptInput');
+        const btn = document.getElementById('executeBtn');
+        const goal = input.value.trim();
+
+        if (!goal || isRunning) return;
+
+        isRunning = true;
+        btn.classList.add('running');
+        btn.disabled = true;
+        document.getElementById('terminalDot').classList.add('running');
+
+        // Clear terminal
+        clearTerminal();
+        appendTerminalLine(`🚀 Starting NexusSentry swarm...`, 'event-agent');
+        appendTerminalLine(`🎯 Goal: ${goal}`, 'event-log');
+        appendTerminalLine(`${'─'.repeat(50)}`, 'event-log');
+
+        // Clear results
+        document.getElementById('resultsWelcome').style.display = 'none';
+        document.getElementById('resultsContent').style.display = 'block';
+        document.getElementById('resultsContent').innerHTML = `
+            <div class="results-welcome">
+                <div class="icon" style="animation: spin 2s linear infinite;">⚙️</div>
+                <h3>Swarm Running...</h3>
+                <p>Watch the terminal for real-time agent output.</p>
+            </div>
+        `;
+
+        try {
+            const response = await fetch(`${API_BASE}/api/run`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ goal }),
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Parse SSE events
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const event = JSON.parse(line.slice(6));
+                            handleSSEEvent(event);
+                        } catch (e) {}
+                    }
+                }
+            }
+        } catch (e) {
+            appendTerminalLine(`❌ Connection error: ${e.message}`, 'event-error');
+        } finally {
+            isRunning = false;
+            btn.classList.remove('running');
+            btn.disabled = false;
+            document.getElementById('terminalDot').classList.remove('running');
+            loadSessions(); // Refresh sidebar
+        }
+    }
+
+    // ── Handle SSE Events ──
+    function handleSSEEvent(event) {
+        switch (event.type) {
+            case 'start':
+                appendTerminalLine(`✅ Run started (id: ${event.run_id})`, 'event-success');
+                break;
+
+            case 'log':
+                const logClass = classifyLogLine(event.data);
+                appendTerminalLine(event.data, logClass);
+                break;
+
+            case 'heartbeat':
+                // Silent keepalive
+                break;
+
+            case 'complete':
+                appendTerminalLine(`${'─'.repeat(50)}`, 'event-log');
+                appendTerminalLine(`✅ Swarm complete!`, 'event-success');
+                appendTerminalLine(`📊 Score: ${event.scorecard.avg_score}/100 | Tasks: ${event.scorecard.completed}/${event.scorecard.total_tasks}`, 'event-success');
+
+                currentArtifacts = event.artifacts || {};
+                currentSessionId = event.session_id;
+                renderResults(event.scorecard, event.tasks);
+                renderArtifacts(event.artifacts || {});
+                break;
+
+            case 'error':
+                appendTerminalLine(`❌ Error: ${event.error}`, 'event-error');
+                if (event.traceback) {
+                    appendTerminalLine(event.traceback, 'event-error');
+                }
+                break;
+        }
+    }
+
+    // ── Classify log lines for coloring ──
+    function classifyLogLine(text) {
+        if (text.includes('✅') || text.includes('complete') || text.includes('APPROVED')) return 'event-success';
+        if (text.includes('❌') || text.includes('Error') || text.includes('FAILED') || text.includes('failed')) return 'event-error';
+        if (text.includes('⚠️') || text.includes('WARNING') || text.includes('⏰') || text.includes('Retrying')) return 'event-warning';
+        if (text.includes('🛡️') || text.includes('Guardian') || text.includes('Security') || text.includes('Constitutional')) return 'event-security';
+        if (text.includes('Scout') || text.includes('Architect') || text.includes('Builder') || text.includes('Critic') || text.includes('Agent') || text.includes('📌') || text.includes('🔀')) return 'event-agent';
+        return 'event-log';
+    }
+
+    // ── Terminal Operations ──
+    function appendTerminalLine(text, className = 'event-log') {
+        const terminal = document.getElementById('terminalBody');
+        const welcome = terminal.querySelector('.terminal-welcome');
+        if (welcome) welcome.remove();
+
+        const line = document.createElement('div');
+        line.className = `terminal-line ${className}`;
+        line.textContent = text;
+        terminal.appendChild(line);
+
+        if (autoScroll) {
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+    }
+
+    function clearTerminal() {
+        document.getElementById('terminalBody').innerHTML = '';
+    }
+
+    function toggleAutoScroll() {
+        autoScroll = !autoScroll;
+        document.getElementById('autoScrollBtn').textContent = autoScroll ? 'Auto-scroll ✓' : 'Auto-scroll ✗';
+    }
+
+    // ── Render Results ──
+    function renderResults(scorecard, tasks) {
+        document.getElementById('resultsWelcome').style.display = 'none';
+        const content = document.getElementById('resultsContent');
+        content.style.display = 'block';
+
+        let html = `
+            <div class="scorecard">
+                <div class="score-card">
+                    <div class="score-value">${scorecard.total_tasks || 0}</div>
+                    <div class="score-label">Total Tasks</div>
+                </div>
+                <div class="score-card">
+                    <div class="score-value">${scorecard.completed || 0}</div>
+                    <div class="score-label">Completed</div>
+                </div>
+                <div class="score-card">
+                    <div class="score-value">${scorecard.failed || 0}</div>
+                    <div class="score-label">Failed</div>
+                </div>
+                <div class="score-card">
+                    <div class="score-value">${scorecard.avg_score || 0}</div>
+                    <div class="score-label">Avg Score</div>
+                </div>
+            </div>
+        `;
+
+        if (tasks && tasks.length > 0) {
+            html += `<div class="task-results"><div class="section-title">📋 Task Results</div>`;
+            for (const task of tasks) {
+                const statusIcon = {
+                    done: '✅', failed: '❌', partial_output: '⏹️',
+                    skipped: '⏭️', human_approved: '👤'
+                }[task.status] || '❓';
+
+                const score = task.score || 0;
+                const scoreClass = score >= 70 ? '' : score >= 50 ? 'mid' : 'low';
+
+                html += `
+                    <div class="task-card">
+                        <div class="task-status-icon">${statusIcon}</div>
+                        <div class="task-info">
+                            <div class="task-name">${escapeHtml(task.task || '')}</div>
+                            <div class="task-meta">${task.attempts || 0} attempts · ${(task.execution_mode || '').toUpperCase()}</div>
+                        </div>
+                        <div class="task-score ${scoreClass}">${score}/100</div>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+        }
+
+        content.innerHTML = html;
+    }
+
+    // ── Render Artifacts ──
+    function renderArtifacts(artifacts) {
+        const content = document.getElementById('artifactsContent');
+        const filenames = Object.keys(artifacts);
+
+        if (filenames.length === 0) {
+            content.innerHTML = `
+                <div class="results-welcome">
+                    <div class="icon">📭</div>
+                    <h3>No artifacts</h3>
+                    <p>No files were generated in this run.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `
+            <div class="artifact-section">
+                <div class="section-title">📄 Generated Artifacts</div>
+                <div class="artifact-tabs">
+                    ${filenames.map((f, i) => `
+                        <div class="artifact-tab ${i === 0 ? 'active' : ''}" onclick="switchArtifactTab('${f}', this)">${f}</div>
+                    `).join('')}
+                </div>
+                <div id="artifactPreviewArea"></div>
+            </div>
+        `;
+
+        content.innerHTML = html;
+
+        // Show first artifact
+        if (filenames.length > 0) {
+            showArtifact(filenames[0]);
+        }
+    }
+
+    function switchArtifactTab(filename, tabEl) {
+        document.querySelectorAll('.artifact-tab').forEach(t => t.classList.remove('active'));
+        tabEl.classList.add('active');
+        showArtifact(filename);
+    }
+
+    function showArtifact(filename) {
+        const area = document.getElementById('artifactPreviewArea');
+        const content = currentArtifacts[filename] || '';
+        const isHtml = filename.endsWith('.html') || filename.endsWith('.htm');
+
+        if (isHtml) {
+            // If we have a session ID, use the API URL for iframe (avoids CSP issues)
+            if (currentSessionId) {
+                area.innerHTML = `
+                    <div class="artifact-preview">
+                        <iframe id="artifactFrame" src="${API_BASE}/api/sessions/${currentSessionId}/artifacts/${filename}" sandbox="allow-scripts allow-same-origin"></iframe>
+                    </div>
+                    <details style="margin-top:12px;">
+                        <summary style="cursor:pointer;color:var(--text-muted);font-size:12px;padding:8px 0;">View Source Code</summary>
+                        <div class="artifact-code">${escapeHtml(content)}</div>
+                    </details>
+                `;
+            } else {
+                // Fallback: use srcdoc for inline content
+                area.innerHTML = `
+                    <div class="artifact-preview">
+                        <iframe id="artifactFrame" srcdoc="${escapeAttr(content)}" sandbox="allow-scripts"></iframe>
+                    </div>
+                    <details style="margin-top:12px;">
+                        <summary style="cursor:pointer;color:var(--text-muted);font-size:12px;padding:8px 0;">View Source Code</summary>
+                        <div class="artifact-code">${escapeHtml(content)}</div>
+                    </details>
+                `;
+            }
+        } else {
+            area.innerHTML = `<div class="artifact-code">${escapeHtml(content)}</div>`;
+        }
+    }
+
+    // ── Result View Toggle ──
+    function switchResultView(view, btnEl) {
+        document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+
+        document.getElementById('resultsContent').style.display = view === 'results' ? 'block' : 'none';
+        document.getElementById('artifactsContent').style.display = view === 'artifacts' ? 'block' : 'none';
+    }
+
+    // ── Preset Prompts ──
+    function usePreset(el) {
+        document.getElementById('promptInput').value = el.textContent;
+        document.getElementById('promptInput').focus();
+    }
+
+    // ── Utilities ──
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function escapeAttr(text) {
+        return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+</script>
+
+</body>
+</html>

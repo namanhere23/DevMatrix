@@ -1,4 +1,6 @@
 # Core dependencies
+fastapi>=0.115.0
+uvicorn>=0.30.0
 python-dotenv
 requests
 langchain-core>=0.3.0
