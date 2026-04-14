@@ -118,7 +118,7 @@ def run_health_check():
 
     # Check 9: Builder execution path
     try:
-        from nexussentry.agents.builder import BuilderAgent
+        from nexussentry.agents import BuilderAgent
         b = BuilderAgent()
         checks.append(
             ("Builder execution", True, f"mode={b.execution_mode} (in-process LLM)"),
@@ -223,8 +223,8 @@ def _print_readiness_report():
 
     # Execution mode
     try:
-        from nexussentry.agents.builder import BuilderAgent
-        exec_mode = BuilderAgent.execution_mode.upper()
+        from nexussentry.agents import BuilderAgent
+        exec_mode = BuilderAgent().execution_mode.upper()
     except Exception:
         exec_mode = "UNKNOWN"
 
