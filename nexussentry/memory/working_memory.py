@@ -6,7 +6,7 @@ Replaces the raw dict-based SwarmMemory with typed, validated state.
 Every field is explicit. No more mystery keys buried in a dict.
 
 Extends the existing typed_memory.py with richer models for:
-- CriticVerdict tracking (with panel breakdown)
+- CriticVerdict tracking
 - AgentOutput tracking (with cost/latency)
 - Token budget management
 - Feedback accumulation for Architect retry loops
@@ -22,7 +22,7 @@ class CriticVerdict(BaseModel):
     decision: str               # "approve" | "reject" | "escalate_to_human"
     issues: List[str] = []
     reasoning: str = ""
-    panel_breakdown: Dict[str, int] = {}   # judge_id → score (from CriticPanel)
+    panel_breakdown: Dict[str, int] = {}   # optional per-reviewer score details
     timestamp: float = Field(default_factory=time.time)
 
 

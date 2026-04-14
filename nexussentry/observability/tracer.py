@@ -33,7 +33,7 @@ class AgentTracer:
     AGENT_ICONS = {
         "Scout": "🔍", "Architect": "🏗️",
         "Builder": "🔨", "Integrator": "🧩", "QAVerifier": "✅", "Critic": "📋",
-        "HITL": "🚨", "Guardian": "🛡️", "System": "⚙️"
+        "Guardian": "🛡️", "System": "⚙️"
     }
 
     def __init__(self):

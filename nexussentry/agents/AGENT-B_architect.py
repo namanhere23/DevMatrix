@@ -26,37 +26,56 @@ ARCHITECT_SYSTEM = """You are The Architect — a senior technical planner.
 
 Given a sub-task and context, create a precise execution plan.
 Your plan will be handed to builder agents who will implement it.
-Be specific about files, functions, line numbers when relevant.
+Do not invent unsupported assumptions. Keep plan relevant to prompt and context.
+Identify execution order needs and technical area clearly.
+
+Execution profile policy:
+- You MUST decide execution_profile from task logic, file coupling, and dependency risk.
+- Use "parallel" only when file groups can be built independently with low merge risk.
+- Use "sequential" when ordering/coupling matters (shared files, stateful edits, migrations, risky refactors).
+- Include a brief justification in builder_requirements.
 
 Respond ONLY with valid JSON — no preamble, no markdown:
 {
-  "plan_summary": "what we're doing and why",
-  "approach": "detailed technical approach",
+    "plan_summary": "short plan summary",
+    "technical_area": "frontend/backend/fullstack/infrastructure/security/data",
+    "execution_profile": "parallel/sequential",
+    "approach": "technical approach",
   "files_to_read": ["file1.py"],
   "files_to_modify": ["file2.py"],
   "commands_to_run": ["pytest tests/", "..."],
   "success_criteria": "how we know it worked",
+    "builder_requirements": ["critical requirement for builder"],
+    "assumptions": ["explicit assumption tied to prompt/context"],
   "risks": ["potential issue 1"]
 }"""
 
-SINGLE_FILE_ARCHITECT_CONSTRAINT = """
-HARD CONSTRAINT — SINGLE FILE MODE:
-The user requires ALL output in a single file: {entrypoint}.
-You MUST set files_to_modify to ONLY ["{entrypoint}"].
-Do NOT plan separate CSS, JS, test, or helper files.
-All CSS must be inline in <style> tags. All JS must be inline in <script> tags.
-No external asset references are allowed.
-builder_count MUST be 1.
-"""
+
+USER_MSG_TEMPLATE = PromptTemplate.from_template(
+    """Sub-task: {sub_task}
+    Sub-task metadata: {sub_task_meta}
+
+    Previous attempt failed. Critic feedback:
+    {feedback}
+
+    Task priority: {task_priority}
+    Estimated complexity: {estimated_complexity}
+
+    Context:
+    {context}{few_shot}{anti_patterns}"""
+)
 
 
 class ArchitectAgent:
     """Researches context + creates an execution plan for the builder pipeline."""
 
+    json_parser = JsonOutputParser()
+
     def plan(self, sub_task: str, feedback: str = "",
              context: str = "", task_priority: str = "medium",
              estimated_complexity: str = "medium", tracer=None,
-             goal_contract=None) -> dict:
+             sub_task_meta: dict | None = None) -> dict:
+        """Create execution plan for a sub-task (model-driven, no rigid contracts)."""
         if tracer:
             tracer.log("Architect", "plan_start", {"task": sub_task})
 
@@ -64,10 +83,9 @@ class ArchitectAgent:
         provider = get_provider()
         provider_name = provider.get_provider_for_agent("architect")
 
-        # Include contract fingerprint in cache key
-        contract_fp = goal_contract.fingerprint() if goal_contract else "none"
+        # Cache key without contract fingerprint (model handles all decisions)
         cache_key = (
-            f"plan::{contract_fp}::{sub_task}::priority={task_priority}::complexity={estimated_complexity}"
+            f"plan::{sub_task}::priority={task_priority}::complexity={estimated_complexity}"
             f"::feedback={feedback[:50]}"
         )
 
@@ -79,11 +97,8 @@ class ArchitectAgent:
                 tracer.log("Architect", "plan_done", {**cached, "from_cache": True, "provider": "cache"})
             return cached
 
-        # Build system prompt with contract constraints
+        # Build system prompt (model-driven)
         system_prompt = ARCHITECT_SYSTEM
-        if goal_contract and goal_contract.single_file:
-            entrypoint = goal_contract.preferred_entrypoint or "index.html"
-            system_prompt += "\n\n" + SINGLE_FILE_ARCHITECT_CONSTRAINT.format(entrypoint=entrypoint)
 
         # v3.0: Retrieve similar past successes from episodic memory
         few_shot_block = ""
@@ -116,19 +131,9 @@ class ArchitectAgent:
         except Exception:
             pass  # Feedback store is optional
 
-        user_msg = PromptTemplate.from_template(
-            """Sub-task: {sub_task}
-
-Previous attempt failed. Critic feedback:
-{feedback}
-
-Task priority: {task_priority}
-Estimated complexity: {estimated_complexity}
-
-Context:
-{context}{few_shot}{anti_patterns}""",
-        ).format(
+        user_msg = USER_MSG_TEMPLATE.format(
             sub_task=sub_task,
+            sub_task_meta=json.dumps(sub_task_meta or {}, ensure_ascii=False),
             feedback=feedback or "none",
             task_priority=task_priority,
             estimated_complexity=estimated_complexity,
@@ -150,15 +155,15 @@ Context:
 
             # Ensure all expected keys exist with defaults
             plan.setdefault("approach", "Direct implementation")
+            plan.setdefault("technical_area", self._infer_technical_area(sub_task, plan))
+            plan["execution_profile"] = self._normalize_execution_profile(plan.get("execution_profile"))
             plan.setdefault("files_to_read", [])
             plan.setdefault("files_to_modify", [])
             plan.setdefault("commands_to_run", [])
             plan.setdefault("success_criteria", "Task completes without errors")
+            plan.setdefault("builder_requirements", [])
+            plan.setdefault("assumptions", [])
             plan.setdefault("risks", [])
-
-            # Enforce single-file contract post-hoc
-            if goal_contract and goal_contract.single_file:
-                plan = self._enforce_single_file_plan(plan, goal_contract)
 
             plan.setdefault(
                 "builder_dispatch",
@@ -166,7 +171,6 @@ Context:
                     plan=plan,
                     task_priority=task_priority,
                     estimated_complexity=estimated_complexity,
-                    goal_contract=goal_contract,
                 ),
             )
 
@@ -180,44 +184,31 @@ Context:
         except Exception as e:
             logger.error(f"Architect planning failed: {e}")
 
-            # Build fallback with contract awareness
-            if goal_contract and goal_contract.single_file:
-                entrypoint = goal_contract.preferred_entrypoint or "index.html"
-                files = [entrypoint]
-            else:
-                files = []
+            # Build fallback (model-driven)
+            files = []
 
             fallback = {
                 "plan_summary": f"Direct execution: {sub_task[:80]}",
+                "technical_area": self._infer_technical_area(sub_task, {}),
+                "execution_profile": "sequential",
                 "approach": "Execute the task directly with standard tools",
                 "files_to_read": [],
                 "files_to_modify": files,
                 "commands_to_run": [],
                 "success_criteria": "Task completes successfully",
+                "builder_requirements": [],
+                "assumptions": [],
                 "risks": ["Using fallback plan — LLM planning unavailable"]
             }
             fallback["builder_dispatch"] = self._build_builder_dispatch(
                 plan=fallback,
                 task_priority=task_priority,
                 estimated_complexity=estimated_complexity,
-                goal_contract=goal_contract,
             )
             print(f"\n🏗️  Architect (fallback): {fallback['plan_summary']}")
             if tracer:
                 tracer.log("Architect", "plan_fallback", {"error": str(e)})
             return fallback
-
-    def _enforce_single_file_plan(self, plan: dict, goal_contract) -> dict:
-        """Override plan to respect single-file contract."""
-        entrypoint = goal_contract.preferred_entrypoint or "index.html"
-        allowed = set(goal_contract.allowed_output_files) if goal_contract.allowed_output_files else {entrypoint}
-
-        # Force files_to_modify to only allowed files
-        plan["files_to_modify"] = [f for f in plan.get("files_to_modify", []) if f in allowed]
-        if not plan["files_to_modify"]:
-            plan["files_to_modify"] = [entrypoint]
-
-        return plan
 
     def _classify_task_size(self, plan: dict, task_priority: str, estimated_complexity: str) -> str:
         """Classify a task as small, medium, or large before builder dispatch."""
@@ -248,49 +239,61 @@ Context:
 
         return "small"
 
-    def _build_builder_dispatch(self, plan: dict, task_priority: str,
-                                estimated_complexity: str,
-                                goal_contract=None) -> dict:
-        """Create a lean builder dispatch contract for the next pipeline stage."""
+    def _infer_technical_area(self, sub_task: str, plan: dict) -> str:
+        text = f"{sub_task} {plan.get('approach', '')}".lower()
+        if any(token in text for token in ["api", "server", "route", "backend", "database"]):
+            return "backend"
+        if any(token in text for token in ["ui", "frontend", "css", "html", "react", "component"]):
+            return "frontend"
+        if any(token in text for token in ["auth", "security", "xss", "sql injection"]):
+            return "security"
+        if any(token in text for token in ["schema", "migration", "query", "etl", "data"]):
+            return "data"
+        if any(token in text for token in ["docker", "kubernetes", "deploy", "ci", "infra"]):
+            return "infrastructure"
+        return "fullstack"
 
-        # Single-file mode forces exactly 1 builder
-        if goal_contract and goal_contract.single_file:
-            return {
-                "task_size": "small",
-                "builder_count": 1,
-                "builder_slots": 1,
-                "parallel_groups": 1,
-                "merge_strategy": "direct_merge",
-            }
+    def _normalize_execution_profile(self, value: str | None) -> str:
+        """Accept only supported execution modes; do not infer policy heuristics here."""
+        mode = str(value or "").strip().lower()
+        if mode in {"parallel", "sequential"}:
+            return mode
+        return "sequential"
+
+    def _build_builder_dispatch(self, plan: dict, task_priority: str,
+                                estimated_complexity: str) -> dict:
+        """Create builder dispatch metadata; prefer model values and only normalize bounds."""
 
         task_size = self._classify_task_size(plan, task_priority, estimated_complexity)
 
-        if task_size == "small":
-            builder_count = 2
-            builder_slots = 2
-            parallel_groups = 1
-            merge_strategy = "direct_merge"
-        elif task_size == "medium":
-            builder_count = 3
-            builder_slots = 3
-            parallel_groups = 2
-            merge_strategy = "integrator_then_qa"
-        else:
-            builder_count = 5
-            builder_slots = 5
-            parallel_groups = 3
-            merge_strategy = "integrator_then_qa_then_critic"
+        dispatch_from_model = plan.get("builder_dispatch", {}) or {}
+        model_count = dispatch_from_model.get("builder_count", plan.get("builder_count"))
+        try:
+            builder_count = int(model_count)
+        except (TypeError, ValueError):
+            # Fallback sizing only when model omitted the value.
+            if task_size == "small":
+                builder_count = 2
+            elif task_size == "medium":
+                builder_count = 3
+            else:
+                builder_count = 5
+
+        builder_count = max(1, min(5, builder_count))
+        builder_slots = builder_count
+        parallel_groups = min(builder_count, 3)
 
         return {
             "task_size": task_size,
             "builder_count": builder_count,
             "builder_slots": builder_slots,
             "parallel_groups": parallel_groups,
-            "merge_strategy": merge_strategy,
+            "execution_profile": plan.get("execution_profile", "sequential"),
         }
 
     def _parse_json_response(self, text: str) -> dict:
-        parsed = JsonOutputParser().parse(text)
+        """Parse JSON response using LangChain's class-level JsonOutputParser."""
+        parsed = self.json_parser.parse(text)
         if isinstance(parsed, dict):
             return parsed
         raise ValueError(f"Could not parse JSON from response: {text[:200]}")

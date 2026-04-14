@@ -47,36 +47,20 @@ def test_episodic_memory():
         print("✓ Phase 1.2 EpisodicMemory: DEGRADED (no chromadb — OK for testing)")
 
 
-def test_critic_panel():
-    """Phase 2: CriticPanel produces structured verdicts."""
-    from nexussentry.agents.critic_panel import CriticPanel
+def test_critic_reviewer():
+    """Phase 2: Critic reviewer produces structured verdicts."""
+    from nexussentry.agents import CriticAgent
 
-    panel = CriticPanel(max_rejections=2)
-    result = panel.review(
+    critic = CriticAgent(max_rejections=2)
+    result = critic.review(
         original_task="Write a function that validates email addresses",
         plan={"plan_summary": "Use regex pattern matching", "approach": "import re; match pattern"},
         execution_result={"summary": "Function validates emails using RFC 5322 pattern"},
     )
     assert "decision" in result
     assert "score" in result
-    assert result["decision"] in ("approve", "reject", "escalate_to_human")
-    print(f"✓ Phase 2 CriticPanel: {result['decision']} ({result.get('score', '?')}/100)")
-
-
-def test_critic_judges_importable():
-    """Phase 2: Separate judge files are importable."""
-    from nexussentry.agents.critics import CorrectnessJudge, SecurityJudge, ArchitectureJudge
-    from nexussentry.agents.critics.base_judge import BaseJudge
-
-    cj = CorrectnessJudge()
-    sj = SecurityJudge()
-    aj = ArchitectureJudge()
-
-    assert cj.judge_id == "correctness"
-    assert sj.judge_id == "security"
-    assert aj.judge_id == "architecture"
-    assert isinstance(cj, BaseJudge)
-    print("✓ Phase 2 Judge Files: All 3 judges importable and correct")
+    assert result["decision"] in ("approve", "reject", "escalate_to_human", "conditional approve")
+    print(f"✓ Phase 2 Critic: {result['decision']} ({result.get('score', '?')}/100)")
 
 
 def test_dynamic_router():
@@ -101,7 +85,7 @@ def test_agent_factory():
 
     simple = factory.assemble_pipeline([{"task": "Add a comment to the main function"}])
     assert "architect" in simple
-    assert "critic_panel" in simple
+    assert "critic" in simple
 
     complex_ = factory.assemble_pipeline([
         {"task": "Implement OAuth2 JWT authentication with security tests"}
@@ -176,8 +160,7 @@ if __name__ == "__main__":
     tests = [
         test_memory_chain,
         test_episodic_memory,
-        test_critic_panel,
-        test_critic_judges_importable,
+        test_critic_reviewer,
         test_dynamic_router,
         test_agent_factory,
         test_constitutional_guard,

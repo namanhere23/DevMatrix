@@ -12,6 +12,7 @@ import ast
 import re
 import json
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -39,6 +40,33 @@ PRODUCTION-QUALITY code. Never return placeholders, TODO comments, or partial sn
 Respond ONLY with the raw source code for the target file."""
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LangChain Prompt Templates
+# ═══════════════════════════════════════════════════════════════════════════
+
+BUILDER_TASK_TEMPLATE = PromptTemplate.from_template(
+    """Builder role: {builder_name}
+    Assigned files: {assigned_files}
+    Plan summary: {plan_summary}
+    Approach: {approach}
+    Overall files in task: {all_files}
+
+    You must only work on the assigned files. Return strict JSON with builder_name,
+    output, generated_files, files_modified."""
+)
+
+CODE_GEN_TEMPLATE = PromptTemplate.from_template(
+    """Generate the COMPLETE, WORKING source code for: {safe_name}
+
+PLAN: {plan_summary}
+APPROACH: {approach}
+ALL FILES: {all_files}
+
+{file_type_hints}
+
+Return only raw source code."""
+)
 
 
 class BuilderAgent:
@@ -76,50 +104,19 @@ class BuilderAgent:
 
         dispatch = plan.get("builder_dispatch", {}) or {}
         requested_builders = int(dispatch.get("builder_count", 1) or 1)
+        execution_profile = str(dispatch.get("execution_profile", "sequential")).lower()
         builder_count = max(1, min(self.MAX_BUILDERS, requested_builders, len(files_to_modify)))
         file_groups = self._partition_files(files_to_modify, builder_count)
 
-        reports = []
-        for idx, group in enumerate(file_groups, start=1):
-            builder_name = f"builder-{idx}"
-            prompt = self._format_prompt("""Builder role: {builder_name}
-Assigned files: {assigned_files}
-Plan summary: {plan_summary}
-Approach: {approach}
-Overall files in task: {all_files}
+        if execution_profile == "parallel" and len(file_groups) > 1:
+            reports = self._run_parallel_builders(plan, provider, files_to_modify, file_groups)
+        else:
+            reports = [
+                self._run_builder_slot(idx, group, plan, provider, files_to_modify)
+                for idx, group in enumerate(file_groups, start=1)
+            ]
 
-You must only work on the assigned files. Return strict JSON with builder_name,
-output, generated_files, files_modified, commands_run, and errors.""",
-                builder_name=builder_name,
-                assigned_files=', '.join(group),
-                plan_summary=plan.get('plan_summary', ''),
-                approach=plan.get('approach', ''),
-                all_files=', '.join(files_to_modify),
-            )
-
-            raw = provider.chat(
-                system=BUILDER_SYSTEM,
-                user_msg=prompt,
-                max_tokens=3000,
-                prefer="auto",
-                agent_name="builder",
-            )
-            report = self._parse_json_response(raw)
-            report.setdefault("builder_name", builder_name)
-            report.setdefault("output", "")
-            report.setdefault("generated_files", {})
-            report.setdefault("files_modified", list(report.get("generated_files", {}).keys()))
-            report.setdefault("commands_run", [])
-            report.setdefault("errors", [])
-
-            if not report["generated_files"]:
-                report["generated_files"] = self._generate_code_files(
-                    {**plan, "files_to_modify": group},
-                    provider,
-                )
-                report["files_modified"] = list(report["generated_files"].keys())
-
-            reports.append(report)
+        reports.sort(key=lambda report: report.get("builder_name", ""))
 
         generated_files = {}
         files_modified = []
@@ -146,11 +143,62 @@ output, generated_files, files_modified, commands_run, and errors.""",
             tracer.log("Builder", "build_done", {
                 "provider": provider_name,
                 "execution_mode": result["execution_mode"],
+                "execution_profile": execution_profile,
                 "builders_used": len(reports),
                 "files_modified": result["files_modified"],
             })
 
         return result
+
+    def _run_parallel_builders(self, plan: dict, provider, files_to_modify: list[str], file_groups: list[list[str]]) -> list[dict]:
+        reports: list[dict] = []
+        max_workers = max(1, min(len(file_groups), self.MAX_BUILDERS))
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="builder-slot") as executor:
+            futures = [
+                executor.submit(self._run_builder_slot, idx, group, plan, provider, files_to_modify)
+                for idx, group in enumerate(file_groups, start=1)
+            ]
+            for future in as_completed(futures):
+                reports.append(future.result())
+        return reports
+
+    def _run_builder_slot(self, idx: int, group: list[str], plan: dict, provider, files_to_modify: list[str]) -> dict:
+        builder_name = f"builder-{idx}"
+        
+        # Use LangChain template to format prompt
+        prompt = BUILDER_TASK_TEMPLATE.format(
+            builder_name=builder_name,
+            assigned_files=', '.join(group),
+            plan_summary=plan.get('plan_summary', ''),
+            approach=plan.get('approach', ''),
+            all_files=', '.join(files_to_modify),
+        )
+
+        raw = provider.chat(
+            system=BUILDER_SYSTEM,
+            user_msg=prompt,
+            max_tokens=3000,
+            prefer="auto",
+            agent_name="builder",
+        )
+        
+        # Use wrapper method for backward compatibility with mocking
+        report = self._parse_json_response(raw)
+        report.setdefault("builder_name", builder_name)
+        report.setdefault("output", "")
+        report.setdefault("generated_files", {})
+        report.setdefault("files_modified", list(report.get("generated_files", {}).keys()))
+        report.setdefault("commands_run", [])
+        report.setdefault("errors", [])
+
+        if not report["generated_files"]:
+            report["generated_files"] = self._generate_code_files(
+                {**plan, "files_to_modify": group},
+                provider,
+            )
+            report["files_modified"] = list(report["generated_files"].keys())
+
+        return report
 
     def _partition_files(self, files_to_modify: list, builder_count: int) -> list:
         """Split files into one group per active builder."""
@@ -184,15 +232,8 @@ output, generated_files, files_modified, commands_run, and errors.""",
             ext = Path(safe_name).suffix.lower()
             file_type_hints = self._get_file_type_hints(ext)
 
-            prompt = self._format_prompt("""Generate the COMPLETE, WORKING source code for: {safe_name}
-
-PLAN: {plan_summary}
-APPROACH: {approach}
-ALL FILES: {all_files}
-
-{file_type_hints}
-
-Return only raw source code.""",
+            # Use LangChain template to format prompt
+            prompt = CODE_GEN_TEMPLATE.format(
                 safe_name=safe_name,
                 plan_summary=plan_summary,
                 approach=approach,
@@ -244,17 +285,17 @@ Return only raw source code.""",
             code = "\n".join(lines[1:-1])
         return code.strip()
 
-    def _format_prompt(self, template: str, **kwargs) -> str:
-        return PromptTemplate.from_template(template).format(**kwargs)
-
     def _parse_json_response(self, text: str) -> dict:
+        """Parse JSON response using LangChain's JsonOutputParser with fallback."""
         try:
-            parsed = JsonOutputParser().parse(text)
+            # Primary: LangChain's JsonOutputParser
+            parsed = self.json_parser.parse(text)
             if isinstance(parsed, dict):
                 return parsed
         except Exception:
             pass
 
+        # Fallback: Regex extraction + json.loads
         json_block = re.search(r"\{[\s\S]*\}", text)
         if json_block:
             candidate = json_block.group(0)
@@ -265,6 +306,7 @@ Return only raw source code.""",
             except Exception:
                 pass
 
+            # Secondary fallback: ast.literal_eval
             try:
                 parsed_literal = ast.literal_eval(candidate)
                 if isinstance(parsed_literal, dict):

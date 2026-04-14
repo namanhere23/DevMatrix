@@ -36,7 +36,7 @@ Evaluate the PLAN QUALITY and CODE LOGIC against these criteria:
 - Code quality: Is the approach maintainable and well-structured?
 
 IMPORTANT RULES:
-- If execution_mode is "python" or "simulated", that is NORMAL. Do NOT penalize for in-process or simulated execution.
+- If execution_mode is "simulated", that is NORMAL and EXPECTED. Do NOT penalize for simulated execution.
 - Judge the QUALITY OF THE APPROACH AND CODE LOGIC, not whether files physically changed.
 - Score below 70 = reject. Score 70-84 = conditional approve. 85+ = approve.
 - For well-structured plans with good security practices, score 85+.

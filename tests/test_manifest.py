@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from nexussentry.contracts import GoalContract, RunContext
-from nexussentry.agents.integrator import IntegratorAgent
+from nexussentry.agents import IntegratorAgent
 
 def _capture_written_files(monkeypatch):
     written = {}

@@ -87,7 +87,7 @@ AGENT_PREFERENCES = {
     "builder": "auto",       # Execution layer
     "integrator": "openrouter",  # Synthesis and merge
     "qa_verifier": "groq",   # Fast validation reasoning
-    "guardian": "gemini",    # Speed for security scanning
+    "optimizer": "gemini",   # Prompt refinement
 }
 
 

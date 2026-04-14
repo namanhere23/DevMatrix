@@ -95,7 +95,6 @@ class RunStore:
             "tasks_completed": 0,
             "trace_log": None,
             "task_results": [],
-            "decision_request": None,
             "artifacts": [],
             "output": {},
             "error": None,

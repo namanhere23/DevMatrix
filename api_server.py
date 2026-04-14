@@ -190,9 +190,7 @@ async def health_check():
 
     # Check agents
     try:
-        from nexussentry.agents.scout import ScoutAgent
-        from nexussentry.agents.architect import ArchitectAgent
-        from nexussentry.agents.builder import BuilderAgent
+        from nexussentry.agents import ArchitectAgent, BuilderAgent, ScoutAgent
         health["agents_available"] = True
     except ImportError:
         health["agents_available"] = False

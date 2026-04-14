@@ -11,7 +11,6 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from .models import (
     ArtifactsResponse,
     CreateRunRequest,
-    DecisionRequest,
     ErrorResponse,
     EventsResponse,
     HealthResponse,
@@ -108,24 +107,6 @@ def create_app(service: RunService | None = None) -> FastAPI:
                 await asyncio.sleep(poll_seconds)
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-    @app.post(
-        "/api/v1/runs/{run_id}/decision",
-        response_model=RunResponse,
-        responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
-    )
-    async def post_decision_endpoint(
-        run_id: str,
-        decision: DecisionRequest,
-        idempotency_key: str | None = Header(default=None),
-    ):
-        return app.state.run_service.submit_decision(
-            run_id,
-            decision.action,
-            actor=decision.actor or "ui",
-            reason=decision.reason,
-            idempotency_key=idempotency_key,
-        )
 
     @app.get("/api/v1/runs/{run_id}/artifacts", response_model=ArtifactsResponse)
     async def get_artifacts_endpoint(run_id: str):

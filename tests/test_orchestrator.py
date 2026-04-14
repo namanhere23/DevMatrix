@@ -11,10 +11,7 @@ import time
 from unittest.mock import patch, MagicMock, AsyncMock
 from types import SimpleNamespace
 
-from nexussentry.agents.critic import CriticAgent
-from nexussentry.agents.builder import BuilderAgent
-from nexussentry.agents.integrator import IntegratorAgent
-from nexussentry.agents.qa_verifier import QAVerifierAgent
+from nexussentry.agents import BuilderAgent, CriticAgent, IntegratorAgent, QAVerifierAgent
 
 
 class TestCriticRetryLoop:
@@ -357,10 +354,6 @@ class TestDependencyWaveScheduler:
                     "suggestions": [],
                 }
 
-        class FakePermissionGate:
-            async def request_retry_permission(self, *_args, **_kwargs):
-                return False
-
         class FakeMemory:
             def summarize_context(self):
                 return ""
@@ -478,18 +471,6 @@ class TestDependencyWaveScheduler:
             def print_summary(self):
                 return None
 
-        def fake_derive_goal_contract(user_goal):
-            return SimpleNamespace(
-                single_file="single file" in user_goal.lower() or "html" in user_goal.lower(),
-                allowed_output_files=["index.html"] if "html" in user_goal.lower() else [],
-                requires_inline_assets="html" in user_goal.lower(),
-                allow_sidecar_assets=False,
-                parallelism_mode="serialized" if "single file" in user_goal.lower() else "parallel",
-                preferred_entrypoint="index.html" if "html" in user_goal.lower() else None,
-                to_dict=lambda: {},
-                fingerprint=lambda: "test",
-            )
-
         def fake_run_context_init(self, run_id, run_output_dir, goal_contract):
             self.run_id = run_id
             self.run_output_dir = run_output_dir
@@ -515,8 +496,6 @@ class TestDependencyWaveScheduler:
         monkeypatch.setattr(orchestrator, "IntegratorAgent", FakeIntegrator)
         monkeypatch.setattr(orchestrator, "QAVerifierAgent", FakeQA)
         monkeypatch.setattr(orchestrator, "CriticAgent", FakeCritic)
-        monkeypatch.setattr(orchestrator, "CriticPanel", FakeCritic)
-        monkeypatch.setattr(orchestrator, "UserPermissionGate", FakePermissionGate)
         monkeypatch.setattr(orchestrator, "SwarmMemory", FakeMemory)
         monkeypatch.setattr(orchestrator, "get_cache", lambda: FakeCache())
         provider = FakeProvider()
@@ -532,7 +511,6 @@ class TestDependencyWaveScheduler:
         monkeypatch.setattr(orchestrator, "SwarmWatchdog", FakeWatchdog)
         monkeypatch.setattr(orchestrator, "EpisodicMemory", FakeEpisodicMemory)
         monkeypatch.setattr(orchestrator, "CostTracker", FakeCostTracker)
-        monkeypatch.setattr(orchestrator, "derive_goal_contract", fake_derive_goal_contract)
         monkeypatch.setattr(orchestrator, "start_dashboard", lambda *a, **k: None)
 
         return orchestrator, state
@@ -562,7 +540,7 @@ class TestDependencyWaveScheduler:
         assert state["build_starts"]["C"] >= state["build_ends"]["B"]
 
     def test_qa_failure_retries_before_critic(self, monkeypatch):
-        """Critic should run only after QA passes, with retries driven by QA failures."""
+        """Verifier and critic should both run each attempt; retries use score thresholds."""
         sub_tasks = [{"id": 1, "task": "A", "priority": "high", "depends_on": []}]
         orchestrator, state = self._install_swarm_stubs(
             monkeypatch,
@@ -583,10 +561,10 @@ class TestDependencyWaveScheduler:
         assert results[0]["status"] == "done"
         assert results[0]["attempts"] == 2
         assert state["architect_calls"] == 2
-        assert state["critic_calls"] == 1
+        assert state["critic_calls"] == 2
 
-    def test_failed_dependency_causes_downstream_skip(self, monkeypatch):
-        """When a dependency fails, dependent tasks should be skipped as blocked."""
+    def test_retry_exhaustion_passes_through_and_unblocks_dependents(self, monkeypatch):
+        """After max retries, task should pass through and allow dependent task execution."""
         sub_tasks = [
             {"id": 1, "task": "A", "priority": "high", "depends_on": []},
             {"id": 2, "task": "B", "priority": "high", "depends_on": [1]},
@@ -606,11 +584,12 @@ class TestDependencyWaveScheduler:
 
         results = asyncio.run(orchestrator.run_swarm("test", enable_dashboard=False, slow=False))
 
-        assert results[0]["status"] == "partial_output"
-        assert results[1]["status"] == "skipped"
+        assert results[0]["status"] == "done"
+        assert results[0]["delivery_status"] == "threshold_bypassed"
+        assert results[1]["status"] == "done"
 
-    def test_serialized_mode_no_parallel_execution(self, monkeypatch):
-        """In serialized mode, tasks should run strictly one after another."""
+    def test_dependency_wave_parallel_for_independent_tasks(self, monkeypatch):
+        """Independent tasks in same wave should be parallelized by default."""
         sub_tasks = [
             {"id": 1, "task": "A", "priority": "high", "depends_on": []},
             {"id": 2, "task": "B", "priority": "high", "depends_on": []},
@@ -621,13 +600,13 @@ class TestDependencyWaveScheduler:
             qa_verdicts=[{"passed": True}, {"passed": True}],
         )
 
-        results = asyncio.run(orchestrator.run_swarm("single file HTML", enable_dashboard=False, slow=False))
-        
-        # In serialized mode, B must start after A finishes even though they have no dependencies
-        assert state["build_starts"]["B"] >= state["build_ends"]["A"]
+        asyncio.run(orchestrator.run_swarm("single file HTML", enable_dashboard=False, slow=False))
 
-    def test_serialized_mode_restores_provider_concurrency(self, monkeypatch):
-        """A serialized run should not leave the shared provider throttled afterward."""
+        # In model-driven mode, independent tasks should overlap
+        assert state["build_starts"]["B"] <= state["build_ends"]["A"]
+
+    def test_provider_concurrency_unchanged_after_run(self, monkeypatch):
+        """A run should not leave shared provider concurrency altered."""
         sub_tasks = [
             {"id": 1, "task": "A", "priority": "high", "depends_on": []},
         ]
@@ -638,7 +617,7 @@ class TestDependencyWaveScheduler:
         )
 
         assert state["provider"].get_max_concurrency() == 4
-        asyncio.run(orchestrator.run_swarm("single file HTML", enable_dashboard=False, slow=False))
+        asyncio.run(orchestrator.run_swarm("test", enable_dashboard=False, slow=False))
         assert state["provider"].get_max_concurrency() == 4
         
     def test_one_run_one_output_dir(self, monkeypatch):

@@ -157,7 +157,6 @@ def make_client(tmp_path, critic_sequences, guardian_safe=True):
         integrator_factory=StubIntegrator,
         qa_verifier_factory=StubQAVerifier,
         critic_factory=critic_factory,
-        decision_timeout_seconds=1,
         max_attempts=3,
     )
     return TestClient(create_app(service)), artifact_dir
@@ -225,63 +224,44 @@ def test_reject_retry_approve_path(workspace_tmp):
     )
 
     created = client.post("/api/v1/runs", json={"goal": "Build backend"}).json()
-    waiting = wait_for_status(client, created["id"], {"awaiting_decision"})
-    assert waiting["decision_request"]["task"] == "Implement backend flow"
-
-    decision = client.post(
-        f"/api/v1/runs/{created['id']}/decision",
-        json={"action": "retry", "reason": "one more pass", "actor": "tester"},
-    )
-    assert decision.status_code == 200
-
     run = wait_for_status(client, created["id"], {"completed"})
     assert run["task_results"][0]["attempts"] == 3
     assert run["task_results"][0]["status"] == "done"
 
 
-def test_reject_accept_current_path(workspace_tmp):
+def test_retry_exhaustion_passes_through_path(workspace_tmp):
     client, _ = make_client(
         workspace_tmp,
         critic_sequences=[[
             {"decision": "reject", "score": 61, "issues_found": ["missing validation"], "suggestions": ["retry"]},
-            {"decision": "escalate_to_human", "score": 58, "issues_found": ["still wrong"], "suggestions": ["accept or stop"]},
+            {"decision": "reject", "score": 58, "issues_found": ["still wrong"], "suggestions": ["accept or stop"]},
+            {"decision": "reject", "score": 55, "issues_found": ["still wrong"], "suggestions": ["accept or stop"]},
         ]],
     )
 
     created = client.post("/api/v1/runs", json={"goal": "Build backend"}).json()
-    wait_for_status(client, created["id"], {"awaiting_decision"})
-
-    client.post(
-        f"/api/v1/runs/{created['id']}/decision",
-        json={"action": "accept_current", "reason": "good enough", "actor": "tester"},
-    )
     run = wait_for_status(client, created["id"], {"completed"})
 
-    assert run["task_results"][0]["status"] == "accepted_current"
-    assert "accepted_current" in run["output"]
+    assert run["task_results"][0]["status"] == "done"
+    assert run["task_results"][0]["attempts"] == 3
 
 
-def test_reject_stop_path(workspace_tmp):
+def test_auto_retry_mode_completes_without_pause(workspace_tmp):
     client, _ = make_client(
         workspace_tmp,
         critic_sequences=[[
             {"decision": "reject", "score": 61, "issues_found": ["missing validation"], "suggestions": ["retry"]},
-            {"decision": "escalate_to_human", "score": 58, "issues_found": ["still wrong"], "suggestions": ["accept or stop"]},
+            {"decision": "reject", "score": 58, "issues_found": ["still wrong"], "suggestions": ["accept or stop"]},
+            {"decision": "reject", "score": 50, "issues_found": ["still wrong"], "suggestions": ["accept or stop"]},
         ]],
     )
 
     created = client.post("/api/v1/runs", json={"goal": "Build backend"}).json()
-    wait_for_status(client, created["id"], {"awaiting_decision"})
-
-    client.post(
-        f"/api/v1/runs/{created['id']}/decision",
-        json={"action": "stop", "reason": "halt", "actor": "tester"},
-    )
-    run = wait_for_status(client, created["id"], {"stopped"})
-    assert "stopped_after_task" in run["output"]
+    run = wait_for_status(client, created["id"], {"completed"})
+    assert run["status"] == "completed"
 
 
-def test_guardian_gate_runs_before_decomposition(workspace_tmp):
+def test_decomposition_starts_without_guardian_gate(workspace_tmp):
     client, _ = make_client(
         workspace_tmp,
         critic_sequences=[[
@@ -293,23 +273,8 @@ def test_guardian_gate_runs_before_decomposition(workspace_tmp):
     wait_for_status(client, created["id"], {"completed"})
     events = client.get(f"/api/v1/runs/{created['id']}/events").json()["events"]
 
-    guardian_idx = next(i for i, event in enumerate(events) if event["agent"] == "Guardian" and event["action"] == "scan_start")
     scout_idx = next(i for i, event in enumerate(events) if event["agent"] == "Scout" and event["action"] == "decompose_start")
-    assert guardian_idx < scout_idx
+    assert scout_idx >= 0
+    assert not any(event.get("agent") == "Guardian" for event in events)
 
 
-def test_decision_endpoint_rejects_invalid_action_value(workspace_tmp):
-    client, _ = make_client(
-        workspace_tmp,
-        critic_sequences=[[
-            {"decision": "approve", "score": 92, "issues_found": [], "suggestions": []}
-        ]],
-    )
-
-    created = client.post("/api/v1/runs", json={"goal": "Build backend"}).json()
-    response = client.post(
-        f"/api/v1/runs/{created['id']}/decision",
-        json={"action": "pause", "reason": "invalid"},
-    )
-
-    assert response.status_code == 422

@@ -5,30 +5,29 @@ from __future__ import annotations
 import mimetypes
 import os
 import threading
-import time
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import HTTPException, status
-
-from nexussentry.agents.architect import ArchitectAgent
-from nexussentry.agents.builder import BuilderAgent
-from nexussentry.agents.critic import CriticAgent
-from nexussentry.agents.integrator import IntegratorAgent
-from nexussentry.agents.qa_verifier import QAVerifierAgent
-from nexussentry.agents.scout import ScoutAgent
+from nexussentry.agents import (
+    ArchitectAgent,
+    BuilderAgent,
+    CriticAgent,
+    IntegratorAgent,
+    QAVerifierAgent,
+    ScoutAgent,
+)
+from nexussentry.execution.profile_selector import ExecutionProfileSelector
 from nexussentry.observability.tracer import AgentTracer
 from nexussentry.providers.llm_provider import get_provider
-from nexussentry.security.guardian import GuardianAI
 from nexussentry.utils.swarm_memory import SwarmMemory
 
-from .models import DecisionAction, OrchestratorEngine, RunStatus
+from .models import OrchestratorEngine, RunStatus
 from .store import RunStore, utc_now
 
 
-DEFAULT_DECISION_TIMEOUT_SECONDS = 300
 DEFAULT_MAX_ATTEMPTS = 3
 
 
@@ -52,50 +51,6 @@ def _status_message(status: RunStatus) -> str:
 
 def _tracer_message(agent: str, action: str) -> str:
     return f"{agent} {action.replace('_', ' ')}"
-
-
-@dataclass
-class DecisionPayload:
-    action: DecisionAction
-    actor: str
-    reason: str | None = None
-    decided_at: datetime = field(default_factory=utc_now)
-
-
-class DecisionMailbox:
-    """Thread-safe mailbox for one pending decision at a time."""
-
-    def __init__(self) -> None:
-        self._condition = threading.Condition()
-        self._pending = False
-        self._value: DecisionPayload | None = None
-
-    def open(self) -> None:
-        with self._condition:
-            self._pending = True
-            self._value = None
-
-    def submit(self, payload: DecisionPayload) -> bool:
-        with self._condition:
-            if not self._pending or self._value is not None:
-                return False
-            self._value = payload
-            self._condition.notify_all()
-            return True
-
-    def wait(self, timeout_seconds: int) -> DecisionPayload | None:
-        deadline = time.monotonic() + timeout_seconds
-        with self._condition:
-            while self._value is None and self._pending:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    self._pending = False
-                    return None
-                self._condition.wait(remaining)
-            value = self._value
-            self._value = None
-            self._pending = False
-            return value
 
 
 class BackendTracer(AgentTracer):
@@ -130,28 +85,24 @@ class RunService:
         self,
         store: RunStore | None = None,
         *,
-        guardian_factory: Callable[[], Any] = GuardianAI,
+        guardian_factory: Callable[[], Any] | None = None,
         scout_factory: Callable[[], Any] = ScoutAgent,
         architect_factory: Callable[[], Any] = ArchitectAgent,
         builder_factory: Callable[[], Any] = BuilderAgent,
         integrator_factory: Callable[[], Any] = IntegratorAgent,
         qa_verifier_factory: Callable[[], Any] = QAVerifierAgent,
         critic_factory: Callable[[], Any] = lambda: CriticAgent(max_rejections=2),
-        decision_timeout_seconds: int = DEFAULT_DECISION_TIMEOUT_SECONDS,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     ):
         self.store = store or RunStore(project_data_dir())
-        self.guardian_factory = guardian_factory
+        self.guardian_factory = guardian_factory  # kept for backward compatibility
         self.scout_factory = scout_factory
         self.architect_factory = architect_factory
         self.builder_factory = builder_factory
         self.integrator_factory = integrator_factory
         self.qa_verifier_factory = qa_verifier_factory
         self.critic_factory = critic_factory
-        self.decision_timeout_seconds = decision_timeout_seconds
         self.max_attempts = max_attempts
-        self._mailboxes: dict[str, DecisionMailbox] = {}
-        self._lock = threading.RLock()
 
     def default_engine(self) -> OrchestratorEngine:
         raw = os.getenv("ORCHESTRATOR_ENGINE", OrchestratorEngine.legacy.value)
@@ -159,14 +110,6 @@ class RunService:
             return OrchestratorEngine(raw)
         except ValueError:
             return OrchestratorEngine.legacy
-
-    def _mailbox_for(self, run_id: str) -> DecisionMailbox:
-        with self._lock:
-            mailbox = self._mailboxes.get(run_id)
-            if mailbox is None:
-                mailbox = DecisionMailbox()
-                self._mailboxes[run_id] = mailbox
-            return mailbox
 
     def create_run(
         self,
@@ -258,48 +201,6 @@ class RunService:
             "events": events,
         }
 
-    def submit_decision(
-        self,
-        run_id: str,
-        action: DecisionAction,
-        *,
-        actor: str = "ui",
-        reason: str | None = None,
-        idempotency_key: str | None = None,
-    ) -> dict[str, Any]:
-        run = self.get_run(run_id)
-        if idempotency_key:
-            cached = self.store.get_idempotent(f"decision:{run_id}:{idempotency_key}")
-            if cached:
-                return self.get_run(cached["run_id"])
-        if run["status"] != RunStatus.awaiting_decision.value:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "decision_not_expected",
-                    "message": f"Run '{run_id}' is not awaiting a decision.",
-                },
-            )
-        payload = DecisionPayload(action=action, actor=actor or "ui", reason=reason)
-        mailbox = self._mailbox_for(run_id)
-        if not mailbox.submit(payload):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "decision_already_resolved",
-                    "message": f"Run '{run_id}' already resolved the pending decision.",
-                },
-            )
-        self.add_event(
-            run_id,
-            "decision.received",
-            f"Decision received: {action.value}",
-            data={"action": action.value, "actor": payload.actor, "reason": reason or ""},
-        )
-        if idempotency_key:
-            self.store.set_idempotent(f"decision:{run_id}:{idempotency_key}", {"run_id": run_id})
-        return self.get_run(run_id)
-
     def list_artifacts(self, run_id: str) -> dict[str, Any]:
         run = self.get_run(run_id)
         return {"run_id": run_id, "artifacts": run.get("artifacts", [])}
@@ -321,12 +222,12 @@ class RunService:
     def _execute_run(self, run_id: str) -> None:
         run = self.get_run(run_id)
         tracer = BackendTracer(self, run_id)
-        guardian = self.guardian_factory()
         scout = self.scout_factory()
         architect = self.architect_factory()
         builder = self.builder_factory()
         integrator = self.integrator_factory()
         qa_verifier = self.qa_verifier_factory()
+        profile_selector = ExecutionProfileSelector()
         memory = SwarmMemory()
         provider = get_provider()
 
@@ -339,22 +240,6 @@ class RunService:
         )
 
         try:
-            self._set_status(run_id, RunStatus.guarding)
-            scan_result = guardian.scan(run["goal"], tracer)
-            if not scan_result.get("safe", True):
-                self.store.update_run(
-                    run_id,
-                    status=RunStatus.failed.value,
-                    error={
-                        "code": "guardian_blocked",
-                        "message": scan_result.get("reason", "Guardian blocked the request."),
-                        "details": scan_result,
-                    },
-                )
-                self.add_event(run_id, "run.blocked", "Guardian blocked the run.", data=scan_result)
-                self._finalize_artifacts(run_id, tracer)
-                return
-
             self._set_status(run_id, RunStatus.decomposing)
             decomposition = scout.decompose(run["goal"], tracer)
             sub_tasks = decomposition.get("sub_tasks", [])
@@ -384,6 +269,7 @@ class RunService:
                     builder=builder,
                     integrator=integrator,
                     qa_verifier=qa_verifier,
+                    profile_selector=profile_selector,
                     memory=memory,
                     tracer=tracer,
                 )
@@ -423,15 +309,16 @@ class RunService:
         builder: Any,
         integrator: Any,
         qa_verifier: Any,
+        profile_selector: ExecutionProfileSelector,
         memory: SwarmMemory,
         tracer: BackendTracer,
     ) -> str:
         critic = self.critic_factory()
         feedback = ""
-        decision_retry_used = False
-        last_plan: dict[str, Any] | None = None
-        last_result: dict[str, Any] | None = None
-        last_verdict: dict[str, Any] | None = None
+        qa_threshold = int(os.getenv("NEXUS_QA_SCORE_THRESHOLD", "70"))
+        critic_threshold = int(os.getenv("NEXUS_CRITIC_SCORE_THRESHOLD", "72"))
+        best_attempt_score = -1
+        best_attempt: dict[str, Any] | None = None
 
         for attempt in range(1, self.max_attempts + 1):
             self.add_event(
@@ -444,155 +331,163 @@ class RunService:
             constraints = memory.get_actionable_constraints(task_obj.get("files_to_modify", []))
             if constraints:
                 plan_context = f"{plan_context}\n\n{constraints}".strip()
-            plan = architect.plan(sub_task=task_desc, feedback=feedback, context=plan_context, tracer=tracer)
-            last_plan = plan
-            
-            # Execute with new pipeline: builder → integrator → qa_verifier
-            builder_result = builder.execute_plan(plan, tracer)
-            integrated_result = integrator.integrate(plan, builder_result, tracer)
-            qa_result = qa_verifier.verify(plan, integrated_result, tracer)
-            
-            last_result = integrated_result
-            
-            # Use Critic to make final decision based on QA and plan
-            verdict = critic.review(task_desc, plan, integrated_result, tracer)
-            last_verdict = verdict
+            try:
+                plan = architect.plan(
+                    sub_task=task_desc,
+                    feedback=feedback,
+                    context=plan_context,
+                    tracer=tracer,
+                    sub_task_meta=task_obj,
+                )
+            except TypeError:
+                plan = architect.plan(
+                    sub_task=task_desc,
+                    feedback=feedback,
+                    context=plan_context,
+                    tracer=tracer,
+                )
 
-            if verdict["decision"] == "approve":
+            profile = profile_selector.resolve(plan)
+            dispatch = plan.get("builder_dispatch", {}) or {}
+            dispatch["execution_profile"] = profile.mode
+            dispatch["builder_count"] = profile.builder_count
+            plan["builder_dispatch"] = dispatch
+
+            # Execute with new pipeline: builder → verifier(score) → critic(score) → integrator(end)
+            if hasattr(builder, "build"):
+                builder_result = builder.build(plan, tracer)
+            else:
+                builder_result = builder.execute_plan(plan, tracer)
+
+            try:
+                qa_result = qa_verifier.verify(
+                    plan,
+                    builder_result.get("generated_files", {}),
+                    builder_result.get("builder_reports", []),
+                    tracer,
+                )
+            except TypeError:
+                qa_result = qa_verifier.verify(plan, builder_result, tracer)
+
+            qa_score = int(qa_result.get("score", 100 if qa_result.get("passed", False) else 0) or 0)
+            qa_passes_threshold = qa_score >= qa_threshold
+            qa_improvements = []
+            if not qa_passes_threshold:
+                qa_improvements = list(qa_result.get("improvements", []) or qa_result.get("suggestions", []) or [])
+                if not qa_improvements:
+                    qa_improvements = [f"Fix: {issue}" for issue in qa_result.get("issues_found", [])[:5]]
+            qa_result["improvements"] = qa_improvements
+
+            critic_input = {
+                **builder_result,
+                "qa_result": qa_result,
+                "execution_mode": builder_result.get("execution_mode", "unknown"),
+            }
+            verdict = critic.review(task_desc, plan, critic_input, tracer)
+
+            critic_score = int(verdict.get("score", 0) or 0)
+            critic_passes_threshold = critic_score >= critic_threshold
+            critic_improvements = []
+            if not critic_passes_threshold:
+                critic_improvements = list(verdict.get("improvements", []) or verdict.get("suggestions", []) or [])
+                if not critic_improvements:
+                    critic_improvements = [f"Fix: {issue}" for issue in verdict.get("issues_found", [])[:5]]
+            verdict["improvements"] = critic_improvements
+
+            combined_score = min(qa_score, critic_score)
+            if combined_score > best_attempt_score:
+                best_attempt_score = combined_score
+                best_attempt = {
+                    "plan": plan,
+                    "builder_result": builder_result,
+                    "qa_result": qa_result,
+                    "critic_verdict": verdict,
+                    "score": combined_score,
+                }
+
+            if qa_passes_threshold and critic_passes_threshold:
+                integrated_result = integrator.integrate(plan, builder_result, tracer)
+                if hasattr(integrator, "promote_to_final"):
+                    integrator.promote_to_final(integrated_result.get("generated_files", {}))
                 task_result = {
                     "task_id": task_id,
                     "task": task_desc,
                     "status": "done",
                     "attempts": attempt,
-                    "score": verdict.get("score"),
-                    "execution_mode": integrated_result.get("execution_mode"),
-                    "saved_to": integrated_result.get("saved_to"),
+                    "score": combined_score,
+                    "execution_mode": builder_result.get("execution_mode"),
+                    "saved_to": integrated_result.get("saved_to", ""),
                 }
                 self.store.append_task_result(run_id, task_result)
-                memory.record_task_result(task_id, task_desc, f"Completed with score {verdict.get('score', 0)}")
+                memory.record_task_result(task_id, task_desc, f"Completed with score {combined_score}")
                 for path in plan.get("files_to_modify", []):
                     memory.mark_file_modified(path)
                 self.add_event(
                     run_id,
                     "task.completed",
                     f"Task {task_id} completed.",
-                    data={"task_id": task_id, "score": verdict.get("score", 0)},
+                    data={"task_id": task_id, "score": combined_score},
                 )
                 return RunStatus.executing.value
 
-            feedback = _format_feedback(verdict)
+            feedback_payload = {
+                "improvements": qa_result.get("improvements", []) + verdict.get("improvements", []),
+                "qa_issues": qa_result.get("issues_found", []),
+                "critic_issues": verdict.get("issues_found", []),
+                "score": combined_score,
+                "thresholds": {
+                    "qa": qa_threshold,
+                    "critic": critic_threshold,
+                },
+            }
+            feedback = json.dumps(feedback_payload, ensure_ascii=False)
             memory.record_critic_feedback(f"Task '{task_desc}': {feedback}")
 
-            if verdict["decision"] == "reject":
-                continue
-
-            if verdict["decision"] == "escalate_to_human":
-                if decision_retry_used or attempt >= self.max_attempts:
-                    self._mark_failed(
-                        run_id,
-                        "max_attempts_exhausted",
-                        f"Task '{task_desc}' exhausted retry budget after decision escalation.",
-                    )
-                    return RunStatus.failed.value
-
-                decision = self._await_decision(run_id, task_id, task_desc, attempt, verdict)
-                if decision.action == DecisionAction.retry:
-                    decision_retry_used = True
-                    feedback = f"{feedback} User chose retry. Reason: {decision.reason or 'No reason provided'}"
-                    self._set_status(run_id, RunStatus.executing, current_task=task_desc)
-                    continue
-                if decision.action == DecisionAction.accept_current:
-                    task_result = {
-                        "task_id": task_id,
-                        "task": task_desc,
-                        "status": "accepted_current",
-                        "attempts": attempt,
-                        "score": verdict.get("score"),
-                        "execution_mode": (last_result or {}).get("execution_mode"),
-                        "saved_to": (last_result or {}).get("saved_to"),
-                    }
-                    self.store.append_task_result(run_id, task_result)
-                    output = self.get_run(run_id).get("output", {})
-                    output["accepted_current"] = {
-                        "task_id": task_id,
-                        "task": task_desc,
-                        "plan_summary": (last_plan or {}).get("plan_summary", ""),
-                        "critic_verdict": last_verdict or {},
-                        "fixer_result": last_result or {},
-                    }
-                    self.store.update_run(run_id, status=RunStatus.completed.value, output=output)
-                    self.add_event(run_id, "run.completed", "Run completed with accepted current output.")
-                    return RunStatus.completed.value
-
-                output = self.get_run(run_id).get("output", {})
-                output["stopped_after_task"] = {
-                    "task_id": task_id,
-                    "task": task_desc,
-                    "critic_verdict": last_verdict or {},
-                }
-                self.store.update_run(run_id, status=RunStatus.stopped.value, output=output)
-                self.add_event(run_id, "run.stopped", "Run stopped by user decision.")
-                return RunStatus.stopped.value
-
-        self._mark_failed(
-            run_id,
-            "max_attempts_exhausted",
-            f"Task '{task_desc}' exhausted the configured retry budget.",
-        )
-        return RunStatus.failed.value
-
-    def _await_decision(
-        self,
-        run_id: str,
-        task_id: int,
-        task_desc: str,
-        attempt: int,
-        verdict: dict[str, Any],
-    ) -> DecisionPayload:
-        requested_at = utc_now()
-        deadline_at = requested_at + timedelta(seconds=self.decision_timeout_seconds)
-        decision_request = {
-            "task_id": task_id,
-            "task": task_desc,
-            "attempt": attempt,
-            "requested_at": requested_at,
-            "deadline_at": deadline_at,
-            "reason": "Critic requested a decision after retries were exhausted.",
-            "critic_score": verdict.get("score"),
-            "issues_found": verdict.get("issues_found", []),
-            "suggestions": verdict.get("suggestions", []),
-        }
-        self.store.update_run(run_id, decision_request=decision_request)
-        self._set_status(run_id, RunStatus.awaiting_decision, current_task=task_desc)
-        self.add_event(
-            run_id,
-            "decision.requested",
-            f"Decision required for task {task_id}",
-            data={
+        if best_attempt is not None:
+            integrated_result = integrator.integrate(best_attempt["plan"], best_attempt["builder_result"], tracer)
+            if hasattr(integrator, "promote_to_final"):
+                integrator.promote_to_final(integrated_result.get("generated_files", {}))
+            final_score = int(best_attempt["score"])
+            task_result = {
                 "task_id": task_id,
                 "task": task_desc,
-                "attempt": attempt,
-                "score": verdict.get("score"),
-                "deadline_at": deadline_at,
-            },
-        )
-        mailbox = self._mailbox_for(run_id)
-        mailbox.open()
-        payload = mailbox.wait(self.decision_timeout_seconds)
-        if payload is None:
-            payload = DecisionPayload(
-                action=DecisionAction.stop,
-                actor="system",
-                reason="Decision timeout reached; defaulting to stop.",
-            )
+                "status": "done",
+                "attempts": self.max_attempts,
+                "score": final_score,
+                "execution_mode": best_attempt["builder_result"].get("execution_mode"),
+                "saved_to": integrated_result.get("saved_to", ""),
+                "delivery_status": "threshold_bypassed",
+            }
+            self.store.append_task_result(run_id, task_result)
+            memory.record_task_result(task_id, task_desc, f"Passed through after retries (score {final_score})")
+            for path in best_attempt["plan"].get("files_to_modify", []):
+                memory.mark_file_modified(path)
             self.add_event(
                 run_id,
-                "decision.timeout",
-                "Decision timeout reached; defaulting to stop.",
-                data={"action": payload.action.value},
+                "task.completed",
+                f"Task {task_id} passed through after retry exhaustion.",
+                data={"task_id": task_id, "score": final_score, "delivery_status": "threshold_bypassed"},
             )
-        self.store.update_run(run_id, decision_request=None)
-        return payload
+            return RunStatus.executing.value
+
+        task_result = {
+            "task_id": task_id,
+            "task": task_desc,
+            "status": "done",
+            "attempts": self.max_attempts,
+            "score": 0,
+            "execution_mode": "unknown",
+            "saved_to": "",
+            "delivery_status": "threshold_bypassed",
+        }
+        self.store.append_task_result(run_id, task_result)
+        self.add_event(
+            run_id,
+            "task.completed",
+            f"Task {task_id} passed through with empty output after retry exhaustion.",
+            data={"task_id": task_id, "score": 0, "delivery_status": "threshold_bypassed"},
+        )
+        return RunStatus.executing.value
 
     def _mark_failed(self, run_id: str, code: str, message: str) -> None:
         self.store.update_run(

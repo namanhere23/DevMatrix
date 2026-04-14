@@ -63,12 +63,14 @@ def run_health_check():
 
     # Check 3: Import agents
     try:
-        from nexussentry.agents.scout import ScoutAgent
-        from nexussentry.agents.architect import ArchitectAgent
-        from nexussentry.agents.builder import BuilderAgent
-        from nexussentry.agents.integrator import IntegratorAgent
-        from nexussentry.agents.qa_verifier import QAVerifierAgent
-        from nexussentry.agents.critic import CriticAgent
+        from nexussentry.agents import (
+            ArchitectAgent,
+            BuilderAgent,
+            CriticAgent,
+            IntegratorAgent,
+            QAVerifierAgent,
+            ScoutAgent,
+        )
         checks.append(("Agent Imports", True, "6/6 agents"))
     except ImportError as e:
         checks.append(("Agent Imports", False, str(e)))
@@ -124,24 +126,16 @@ def run_health_check():
     except Exception as e:
         checks.append(("Builder execution", False, str(e)))
 
-    # Check 10: User permission gate status
-    try:
-        from nexussentry.hitl.user_permission import UserPermissionGate
-        gate = UserPermissionGate()
-        checks.append(("User Permission", True, gate.__class__.__name__))
-    except Exception as e:
-        checks.append(("User Permission", False, str(e)))
-
     # ─── v3.0 Component Checks ───
-    # Check 11: Critic Panel (MoA Debate)
+    # Check 10: Critic reviewer
     try:
-        from nexussentry.agents.critic_panel import CriticPanel
-        panel = CriticPanel()
-        checks.append(("Critic Panel (MoA)", True, "3-judge debate panel"))
+        from nexussentry.agents import CriticAgent
+        critic = CriticAgent()
+        checks.append(("Critic Reviewer", True, critic.__class__.__name__))
     except Exception as e:
-        checks.append(("Critic Panel (MoA)", False, str(e)))
+        checks.append(("Critic Reviewer", False, str(e)))
 
-    # Check 12: Constitutional Guard
+    # Check 11: Constitutional Guard
     try:
         from nexussentry.security.constitutional_guard import ConstitutionalGuard
         cg = ConstitutionalGuard()
@@ -149,7 +143,7 @@ def run_health_check():
     except Exception as e:
         checks.append(("Constitutional AI", False, str(e)))
 
-    # Check 13: Dynamic Router
+    # Check 12: Dynamic Router
     try:
         from nexussentry.providers.dynamic_router import DynamicRouter
         dr = DynamicRouter()
@@ -157,7 +151,7 @@ def run_health_check():
     except Exception as e:
         checks.append(("Dynamic Router", False, str(e)))
 
-    # Check 14: Agent Factory
+    # Check 13: Agent Factory
     try:
         from nexussentry.factory.agent_factory import AgentFactory
         af = AgentFactory()
@@ -165,7 +159,7 @@ def run_health_check():
     except Exception as e:
         checks.append(("Agent Factory", False, str(e)))
 
-    # Check 15: Swarm Watchdog
+    # Check 14: Swarm Watchdog
     try:
         from nexussentry.utils.watchdog import SwarmWatchdog
         wd = SwarmWatchdog(max_wall_time_seconds=300)
@@ -173,7 +167,7 @@ def run_health_check():
     except Exception as e:
         checks.append(("Swarm Watchdog", False, str(e)))
 
-    # Check 16: Feedback Store
+    # Check 15: Feedback Store
     try:
         from nexussentry.memory.feedback_store import SwarmFeedbackStore
         fs = SwarmFeedbackStore()
@@ -182,7 +176,7 @@ def run_health_check():
     except Exception as e:
         checks.append(("Feedback Store", False, str(e)))
 
-    # Check 17: Blackboard
+    # Check 16: Blackboard
     try:
         from nexussentry.communication.blackboard import SwarmBlackboard
         bb = SwarmBlackboard()
@@ -245,20 +239,11 @@ def _print_readiness_report():
     except Exception:
         provider_mode = "UNKNOWN"
 
-    # User permission gate
-    try:
-        from nexussentry.hitl.user_permission import UserPermissionGate
-        gate = UserPermissionGate()
-        permission_status = gate.__class__.__name__
-    except Exception:
-        permission_status = "UNAVAILABLE"
-
     # Dashboard
     dashboard_status = "READY"
 
     print(f"   ⚡ Execution:    {exec_mode}")
     print(f"   🤖 AI Providers: {provider_mode}")
-    print(f"   👤 Permission:   {permission_status}")
     print(f"   🌐 Dashboard:    {dashboard_status}")
 
     # Overall badge

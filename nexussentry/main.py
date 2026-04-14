@@ -18,6 +18,7 @@ import re
 import sys
 import logging
 import uuid
+import json
 from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
@@ -43,17 +44,17 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
-from nexussentry.agents.scout import ScoutAgent
-from nexussentry.agents.architect import ArchitectAgent
-from nexussentry.agents.builder import BuilderAgent
-from nexussentry.agents.integrator import IntegratorAgent
-from nexussentry.agents.qa_verifier import QAVerifierAgent
-from nexussentry.agents.critic import CriticAgent
-from nexussentry.agents.critic_panel import CriticPanel
-from nexussentry.hitl.user_permission import UserPermissionGate
+from nexussentry.agents import (
+    ArchitectAgent,
+    BuilderAgent,
+    CriticAgent,
+    IntegratorAgent,
+    QAVerifierAgent,
+    ScoutAgent,
+)
 from nexussentry.observability.tracer import AgentTracer
 from nexussentry.observability.dashboard import start_dashboard
-from nexussentry.security.guardian import GuardianAI
+from nexussentry.security.guardian import GuardianAI  # compatibility symbol for legacy tests
 from nexussentry.security.constitutional_guard import ConstitutionalGuard
 from nexussentry.security.behavioral_guard import BehavioralGuardrail
 from nexussentry.utils.response_cache import get_cache
@@ -63,9 +64,12 @@ from nexussentry.utils.watchdog import SwarmWatchdog, SwarmTimeoutError
 from nexussentry.memory.feedback_store import SwarmFeedbackStore
 from nexussentry.memory.typed_memory import SwarmSessionMemory
 from nexussentry.communication.blackboard import SwarmBlackboard
-from nexussentry.contracts import GoalContract, RunContext, derive_goal_contract
+from nexussentry.contracts import RunContext
 from nexussentry.memory.episodic_memory import EpisodicMemory
 from nexussentry.observability.cost_tracker import CostTracker
+from nexussentry.execution.profile_selector import ExecutionProfileSelector
+
+
 def print_banner():
     """Print the NexusSentry startup banner."""
     banner = """
@@ -91,12 +95,25 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     Main orchestration loop.
 
     Flow:
-        User Goal → Guardian (security) → Scout (decompose with dependencies) →
+        User Goal → Scout (difficulty + decomposition with dependencies) →
         execute ready sub-tasks in parallel waves (dependency-aware):
-            Architect (plan) → Builder(s) → Integrator → QA Verifier (strict gate)
-            if QA fails: retry directly with QA feedback
-            if QA passes: Critic reviews; rejection loops back to Architect
-            if Critic escalates: ask user whether to retry or return current output
+            
+            For each sub-task (up to 3 attempts per task):
+              Architect (plan) → ExecutionProfileSelector (validate) → 
+              Builder(s) (execute) → QA Verifier (score+improvements) → 
+                            Critic reviewer (score+improvements)
+              
+              Decision:
+                if qa_score ≥ qa_threshold AND critic_score ≥ critic_threshold:
+                  → Integrator (merge) → approved, move to next task
+                else:
+                  → retry with combined QA+Critic improvements (next attempt)
+            
+            After 3 retries exhausted:
+              if best_attempt_score > 0:
+                → Integrator (merge best attempt) → pass-through with "threshold_bypassed" status
+              else:
+                → zero-output pass-through
     """
     print_banner()
     print(f"  📋 Goal: {user_goal}")
@@ -104,12 +121,11 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
 
     # ── Initialize all components ──
     tracer = AgentTracer()
-    guardian = GuardianAI()
     scout = ScoutAgent()
     architect = ArchitectAgent()
     builder = BuilderAgent()
+    profile_selector = ExecutionProfileSelector()
     qa_verifier = QAVerifierAgent()
-    permission_gate = UserPermissionGate()
     cache = get_cache()
     provider = get_provider()
     memory = SwarmMemory()
@@ -125,15 +141,14 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     episodic_memory = EpisodicMemory()
     cost_tracker = CostTracker()
 
-    # ── Derive GoalContract from user intent ──
-    goal_contract = derive_goal_contract(user_goal)
+    # ── Setup run context (model-driven) ──
     project_root = Path(__file__).resolve().parent.parent
     run_id = getattr(tracer, "session_id", None) or uuid.uuid4().hex[:16]
     run_output_dir = project_root / "output" / f"session_{run_id}"
     run_context = RunContext(
         run_id=run_id,
         run_output_dir=run_output_dir,
-        goal_contract=goal_contract,
+        goal_contract=None,
     )
 
     # Create canonical output structure up front
@@ -142,13 +157,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
 
     integrator = IntegratorAgent(run_context=run_context)
 
-    # ── Print contract summary ──
-    print(f"  📜 GoalContract:")
-    print(f"     single_file={goal_contract.single_file}")
-    print(f"     allowed_outputs={goal_contract.allowed_output_files}")
-    print(f"     inline_assets={goal_contract.requires_inline_assets}")
-    print(f"     parallelism={goal_contract.parallelism_mode}")
-    print(f"     entrypoint={goal_contract.preferred_entrypoint}")
     print(f"  📂 Run output: {run_output_dir}")
 
     # ── Execution path (in-process builder / LLM generation) ──
@@ -188,7 +196,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         "providers": provider.available_providers,
         "mock_mode": provider.mock_mode,
         "execution_mode": exec_mode,
-        "goal_contract": goal_contract.to_dict(),
     })
     def _normalize_sub_tasks(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Normalize IDs/dependencies so orchestration can safely schedule tasks."""
@@ -241,12 +248,14 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         print(f"  📌 Sub-task {task_id}/{len(decomposition.get('sub_tasks', []))} [{priority}]{dep_label}: {task_desc}")
 
         feedback = ""
-        critic_panel = CriticPanel(max_rejections=2)
+        critic = CriticAgent(max_rejections=2)
         execution_result: dict[str, Any] = {}
         
         # Track best attempt across retries in case all 3 fail
         best_attempt_score = -1
         best_attempt_data = None
+        qa_threshold = int(os.getenv("NEXUS_QA_SCORE_THRESHOLD", "70"))
+        critic_threshold = int(os.getenv("NEXUS_CRITIC_SCORE_THRESHOLD", "72"))
 
         # v3.0: Get task working memory
         task_memory = session_memory.get_or_create_task_memory(task_id, task_obj)
@@ -287,8 +296,14 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 task_priority=priority,
                 estimated_complexity=decomposition.get("estimated_complexity", "medium"),
                 tracer=tracer,
-                goal_contract=goal_contract,
+                sub_task_meta=task_obj,
             )
+
+            execution_profile = profile_selector.resolve(plan)
+            plan_dispatch = plan.get("builder_dispatch", {}) or {}
+            plan_dispatch["execution_profile"] = execution_profile.mode
+            plan_dispatch["builder_count"] = execution_profile.builder_count
+            plan["builder_dispatch"] = plan_dispatch
 
             # v3.0: Constitutional check on Architect output
             const_verdict = constitutional_guard.check_output("architect", plan)
@@ -321,29 +336,28 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 tracer,
             )
 
-            integration_result = await asyncio.to_thread(
-                integrator.integrate,
-                plan,
-                builder_result,
-                tracer,
-                task_id=task_id,
-            )
-
             qa_result = await asyncio.to_thread(
                 qa_verifier.verify,
                 plan,
-                integration_result.get("generated_files", {}),
+                builder_result.get("generated_files", {}),
                 builder_result.get("builder_reports", []),
                 tracer,
-                goal_contract=goal_contract,
             )
+
+            qa_score = int(qa_result.get("score", 100 if qa_result.get("passed", False) else 0) or 0)
+            qa_passes_threshold = qa_score >= qa_threshold
+            qa_improvements = []
+            if not qa_passes_threshold:
+                qa_improvements = list(qa_result.get("suggestions", []) or [])
+                if not qa_improvements:
+                    qa_improvements = [f"Fix: {issue}" for issue in qa_result.get("issues_found", [])[:5]]
+            qa_result["improvements"] = qa_improvements
 
             execution_result = {
                 **builder_result,
-                **integration_result,
                 "qa_result": qa_result,
-                "output": integration_result.get("integrator_summary", ""),
-                "success": builder_result.get("success", True) and qa_result.get("passed", True),
+                "output": builder_result.get("output", ""),
+                "success": builder_result.get("success", True) and qa_passes_threshold,
             }
 
             # v3.0: Constitutional check on Builder output
@@ -360,37 +374,16 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
             task_memory.record_output(execution_result)
             all_agent_outputs.append(execution_result)
 
-            if not qa_result.get("passed", False):
-                qa_score = int(qa_result.get("score", 0))
-                if qa_score > best_attempt_score:
-                    best_attempt_score = qa_score
-                    best_attempt_data = {
-                        "generated_files": integration_result.get("generated_files", {}),
-                        "execution_result": execution_result,
-                        "score": qa_score
-                    }
-
-                qa_issues = qa_result.get("issues_found", [])
-                qa_suggestions = qa_result.get("suggestions", [])
-                feedback = (
-                    f"QA failed. Issues: {', '.join(qa_issues)}. "
-                    f"Suggestions: {', '.join(qa_suggestions)}"
-                )
-                memory.record_critic_feedback(f"Task '{task_desc}' QA: " + feedback)
-                print(f"    ❌ QA failed for sub-task {task_id}; retrying before Critic.")
-                continue
-
             if slow:
                 await asyncio.sleep(1.5)
 
-            # v3.0: Use CriticPanel (MoA debate) instead of single Critic
+            # Use single-critic review for low-latency validation.
             verdict = await asyncio.to_thread(
-                critic_panel.review,
+                critic.review,
                 original_task=task_desc,
                 plan=plan,
                 execution_result=execution_result,
                 tracer=tracer,
-                goal_contract=goal_contract,
             )
 
             # v3.0: Record verdict in typed memory
@@ -401,51 +394,60 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 numeric_score = int(score_str)
             except (ValueError, TypeError):
                 numeric_score = 0
-                
-            if numeric_score > best_attempt_score:
-                best_attempt_score = numeric_score
+            critic_passes_threshold = numeric_score >= critic_threshold
+            critic_improvements = []
+            if not critic_passes_threshold:
+                critic_improvements = list(verdict.get("suggestions", []) or [])
+                if not critic_improvements:
+                    critic_improvements = [f"Fix: {issue}" for issue in verdict.get("issues_found", [])[:5]]
+            verdict["improvements"] = critic_improvements
+
+            combined_score = min(qa_score, numeric_score)
+            if combined_score > best_attempt_score:
+                best_attempt_score = combined_score
                 best_attempt_data = {
-                    "generated_files": integration_result.get("generated_files", {}),
+                    "generated_files": builder_result.get("generated_files", {}),
                     "execution_result": execution_result,
-                    "score": numeric_score
+                    "score": combined_score,
+                    "plan": plan,
+                    "qa_result": qa_result,
+                    "critic_result": verdict,
                 }
 
-            if verdict["decision"] == "approve":
-                score = verdict.get("score", "?")
+            if qa_passes_threshold and critic_passes_threshold:
+                integration_result = await asyncio.to_thread(
+                    integrator.integrate,
+                    plan,
+                    builder_result,
+                    tracer,
+                    task_id=task_id,
+                )
+                score = min(qa_score, numeric_score)
                 exec_mode_tag = execution_result.get("execution_mode", "unknown").upper()
                 print(f"\n    ✅ Sub-task {task_id} complete! (score: {score}/100) [{exec_mode_tag}]")
 
-                # Promote approved artifacts to final/
-                integrator.promote_to_final(
-                    integration_result.get("generated_files", {})
-                )
+                integrator.promote_to_final(integration_result.get("generated_files", {}))
 
-                if best_attempt_data:
-                    max_output_dir = run_context.run_output_dir / "max_output"
-                    max_output_dir.mkdir(parents=True, exist_ok=True)
-                    integrator.save_snapshot(
-                        max_output_dir,
-                        best_attempt_data["generated_files"],
-                    )
+                max_output_dir = run_context.run_output_dir / "max_output"
+                max_output_dir.mkdir(parents=True, exist_ok=True)
+                integrator.save_snapshot(max_output_dir, integration_result.get("generated_files", {}))
 
                 memory.record_task_result(task_id, task_desc, f"Completed with score {score}")
                 for file_path in plan.get("files_to_modify", []):
                     memory.mark_file_modified(file_path)
 
-                # v3.0: Update blackboard and watchdog
-                blackboard.post(f"result:task_{task_id}", {"status": "done", "score": score}, agent="critic_panel")
+                blackboard.post(f"result:task_{task_id}", {"status": "done", "score": score}, agent="critic")
                 watchdog.record_task_complete()
 
-                # v3.0: Store successful episode in episodic memory
                 try:
                     episodic_memory.store_episode(
                         task=task_desc,
                         plan=plan,
-                        result_summary=execution_result.get("output", "")[:300],
-                        score=int(score) if isinstance(score, (int, float)) else 0
+                        result_summary=integration_result.get("integrator_summary", "")[:300],
+                        score=int(score),
                     )
                 except Exception:
-                    pass  # Episodic memory is optional
+                    pass
 
                 return {
                     "task_id": task_id,
@@ -458,56 +460,19 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                     "saved_to": str(run_context.final_artifact_dir),
                 }
 
-            if verdict["decision"] == "escalate_to_human":
-                tracer.log("UserPermission", "retry_requested", {"task": task_desc})
-                retry_approved = await permission_gate.request_retry_permission(
-                    message=f"Task: {task_desc}",
-                    details={
-                        "issues": ", ".join(verdict.get("issues_found", [])),
-                        "score": str(verdict.get("score", "?")),
-                    },
-                )
-
-                if retry_approved and attempt < 2:
-                    tracer.log("UserPermission", "retry_approved", {})
-                    print(f"    🔁 User approved one more retry for sub-task {task_id}.")
-                    feedback = (
-                        f"User approved a retry after escalation. "
-                        f"Issues: {', '.join(verdict.get('issues_found', []))}. "
-                        f"Suggestions: {', '.join(verdict.get('suggestions', []))}"
-                    )
-                    memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
-                    continue
-
-                tracer.log("UserPermission", "retry_denied", {})
-                print(f"    ⏹️  User declined retry. Returning current results.")
-                
-                if best_attempt_data:
-                    max_output_dir = run_context.run_output_dir / "max_output"
-                    max_output_dir.mkdir(parents=True, exist_ok=True)
-                    integrator.save_snapshot(
-                        max_output_dir,
-                        best_attempt_data["generated_files"],
-                    )
-
-                return {
-                    "task_id": task_id,
-                    "task": task_desc,
-                    "status": "partial_output",
-                    "attempts": attempt + 1,
-                    "execution_mode": execution_result.get("execution_mode", "unknown"),
-                    "delivery_status": "best_effort",
-                    "saved_to": execution_result.get("saved_to", ""),
-                    "stop_requested": True,
-                }
-
-            issues = verdict.get("issues_found", [])
-            score = verdict.get("score", "?")
-            feedback = (
-                f"Previous attempt scored {score}/100. "
-                f"Issues: {', '.join(issues)}. "
-                f"Suggestions: {', '.join(verdict.get('suggestions', []))}"
-            )
+            score = min(qa_score, numeric_score)
+            improvement_payload = {
+                "improvements": qa_result.get("improvements", []) + verdict.get("improvements", []),
+                "qa_issues": qa_result.get("issues_found", []),
+                "critic_issues": verdict.get("issues_found", []),
+                "score": score,
+                "thresholds": {
+                    "qa": qa_threshold,
+                    "critic": critic_threshold,
+                },
+                "retry_focus": "Raise both verifier and critic scores above thresholds.",
+            }
+            feedback = json.dumps(improvement_payload, ensure_ascii=False)
             memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
 
             # v3.0: Record rejection in feedback store for future learning
@@ -518,53 +483,66 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 attempt=attempt + 1,
             )
 
-            print(f"    🔄 Retrying sub-task {task_id} with Panel feedback...")
+            print(f"    🔄 Retrying sub-task {task_id} with Critic feedback...")
 
-        # If we exhausted all attempts, save best effort (NOT to final/)
+        # If we exhausted all attempts, pass through with best available result.
         if best_attempt_data:
-            best_effort_dir = run_context.run_output_dir / "best_effort" / f"task_{task_id}"
-            best_effort_dir.mkdir(parents=True, exist_ok=True)
-            
+            best_builder_result = {
+                "builder_reports": best_attempt_data["execution_result"].get("builder_reports", []),
+                "generated_files": best_attempt_data["generated_files"],
+            }
+            final_plan = best_attempt_data.get("plan", {"plan_summary": task_desc})
+            integration_result = await asyncio.to_thread(
+                integrator.integrate,
+                final_plan,
+                best_builder_result,
+                tracer,
+                task_id=task_id,
+            )
+            integrator.promote_to_final(integration_result.get("generated_files", {}))
+
             max_output_dir = run_context.run_output_dir / "max_output"
             max_output_dir.mkdir(parents=True, exist_ok=True)
-            
-            integrator.save_snapshot(
-                best_effort_dir,
-                best_attempt_data["generated_files"],
+            integrator.save_snapshot(max_output_dir, integration_result.get("generated_files", {}))
+
+            final_score = int(best_attempt_data["score"])
+            memory.record_task_result(task_id, task_desc, f"Passed through after retries (score {final_score})")
+            for file_path in final_plan.get("files_to_modify", []):
+                memory.mark_file_modified(file_path)
+            blackboard.post(
+                f"result:task_{task_id}",
+                {"status": "done", "score": final_score, "delivery_status": "threshold_bypassed"},
+                agent="critic",
             )
-            integrator.save_snapshot(
-                max_output_dir,
-                best_attempt_data["generated_files"],
-            )
-            print(f"    ⚠️ All attempts failed. Best attempt (score: {best_attempt_data['score']}/100) saved to best_effort/ and max_output/")
+            watchdog.record_task_complete()
+            print(f"    ⚠️ Threshold not met after 3 attempts. Passing through with best result ({final_score}/100).")
 
             return {
                 "task_id": task_id,
                 "task": task_desc,
-                "status": "partial_output",
-                "score": best_attempt_data["score"],
+                "status": "done",
+                "score": final_score,
                 "attempts": 3,
                 "execution_mode": best_attempt_data["execution_result"].get("execution_mode", "unknown"),
-                "delivery_status": "best_effort",
-                "saved_to": str(best_effort_dir),
+                "delivery_status": "threshold_bypassed",
+                "saved_to": str(run_context.final_artifact_dir),
             }
 
         return {
             "task_id": task_id,
             "task": task_desc,
-            "status": "failed",
+            "status": "done",
             "score": 0,
             "attempts": 3,
             "execution_mode": execution_result.get("execution_mode", "unknown"),
-            "delivery_status": "failed",
-            "saved_to": execution_result.get("saved_to", ""),
+            "delivery_status": "threshold_bypassed",
+            "saved_to": str(run_context.final_artifact_dir),
         }
 
     def _print_final_summary(results: list[dict[str, Any]]) -> None:
         tracer.mark_complete()
         summary = tracer.summary()
         cache_stats = cache.stats()
-        security_stats = guardian.stats()
         provider_stats = provider.stats()
         constitutional_stats = constitutional_guard.stats()
         watchdog_summary = watchdog.summary()
@@ -596,7 +574,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         print(f"    Agents used:    {', '.join(summary['agents_used'])}")
         print(f"    Approvals:      {summary['approvals']}")
         print(f"    Rejections:     {summary['rejections']}")
-        print(f"    Security scans: {security_stats['scans_performed']}")
         print(f"    Cache hit rate: {cache_stats['hit_rate']}")
         print(f"    LLM calls:     {provider_stats['total_calls']}")
         print(f"    Providers used: {provider_stats['provider_usage']}")
@@ -671,27 +648,12 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         original_provider_concurrency = provider.get_max_concurrency()
 
     try:
-        if goal_contract.parallelism_mode == "serialized":
-            provider.set_max_concurrency(1)
-
-        print(f"\n  🛡️  Running 7-layer security scan...")
-        scan_result = guardian.scan(user_goal, tracer)
-        if not scan_result.get("safe", True):
-            print(f"\n  🚨 BLOCKED by Guardian (Layer {scan_result.get('layer', '?')})")
-            print(f"     Reason: {scan_result.get('reason', 'Unknown')}")
-            print(f"\n  {'═' * 56}")
-            print(f"  🛡️  0 data leaked. Threat neutralized.\n")
-            tracer.mark_complete()
-            return []
-
-        print(f"  ✅ Security scan passed (all 7 layers clear)\n")
-
         if slow:
             await asyncio.sleep(2)
 
         context = memory.summarize_context()
         scout_input = user_goal if not context else f"{user_goal}\n\nContext:\n{context}"
-        decomposition = scout.decompose(scout_input, tracer, goal_contract=goal_contract)
+        decomposition = scout.decompose(scout_input, tracer)
         sub_tasks = _normalize_sub_tasks(decomposition.get("sub_tasks", []))
 
         if not sub_tasks:
@@ -769,16 +731,10 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 break
 
             ready_ids = [task.get("id") for task in ready_tasks]
-            if goal_contract.parallelism_mode == "serialized":
-                print(f"\n  🔗 Executing tasks in serialized mode: {ready_ids}")
-                wave_results = []
-                for task_obj in ready_tasks:
-                    wave_results.append(await _execute_sub_task(task_obj, decomposition))
-            else:
-                print(f"\n  🚀 Executing dependency-ready wave in parallel: {ready_ids}")
-                wave_results = await asyncio.gather(
-                    *[_execute_sub_task(task_obj, decomposition) for task_obj in ready_tasks]
-                )
+            print(f"\n  🚀 Executing dependency-ready wave in parallel: {ready_ids}")
+            wave_results = await asyncio.gather(
+                *[_execute_sub_task(task_obj, decomposition) for task_obj in ready_tasks]
+            )
 
             for task_result in wave_results:
                 task_id = task_result.get("task_id")

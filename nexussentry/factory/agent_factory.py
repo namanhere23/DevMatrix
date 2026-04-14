@@ -43,7 +43,7 @@ class AgentFactory:
         if self._matches(task_text, self._TEST_PATTERNS) or "security_auditor" not in pipeline:
             pipeline.append("qa_verifier")
 
-        pipeline.append("critic_panel")
+        pipeline.append("critic")
         return pipeline
 
     def _matches(self, text: str, patterns: tuple[str, ...]) -> bool:

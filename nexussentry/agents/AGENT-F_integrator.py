@@ -112,13 +112,10 @@ class IntegratorAgent:
             return
 
         final_dir = self.run_context.final_artifact_dir
-        allowed = None
-        if self.run_context.goal_contract.single_file:
-            allowed = set(self.run_context.goal_contract.allowed_output_files)
         saved_files = self._write_generated_files(
             final_dir,
             generated_files,
-            allowed_files=allowed,
+            allowed_files=None,
         )
         for saved_path in saved_files:
             rel_path = Path(saved_path).relative_to(final_dir).as_posix()
@@ -151,7 +148,6 @@ class IntegratorAgent:
             "run_id": self.run_context.run_id,
             "generated_at": datetime.now().isoformat(),
             "goal": goal,
-            "goal_contract": self.run_context.goal_contract.to_dict(),
             "tasks": [
                 {
                     "task_id": t.get("task_id"),

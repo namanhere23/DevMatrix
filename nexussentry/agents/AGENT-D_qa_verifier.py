@@ -14,7 +14,6 @@ If deterministic checks fail, skips LLM QA entirely.
 
 import logging
 import re
-from typing import Optional
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -35,9 +34,14 @@ Respond ONLY with valid JSON:
   "summary": "short verification summary"
 }"""
 
-# ═══════════════════════════════════════════
-# Deterministic Pre-Checks
-# ═══════════════════════════════════════════
+QA_USER_PROMPT = PromptTemplate.from_template(
+        """Plan summary: {plan_summary}
+Generated files: {generated_files}
+Missing files: {missing_files}
+Builder count: {builder_count}
+
+Return a strict JSON QA verdict."""
+)
 
 _PLACEHOLDER_PATTERNS = [
     r"\btodo\b",
@@ -232,6 +236,8 @@ def run_deterministic_qa(generated_files: dict, goal_contract=None) -> dict:
 class QAVerifierAgent:
     """Runs deterministic and LLM-assisted QA checks on integrated artifacts."""
 
+    json_parser = JsonOutputParser()
+
     def verify(self, plan: dict, generated_files: dict,
                builder_reports: list, tracer=None,
                goal_contract=None) -> dict:
@@ -247,6 +253,9 @@ class QAVerifierAgent:
                 "score": 0,
                 "issues_found": det_result["issues"],
                 "suggestions": [
+                    f"Fix: {issue}" for issue in det_result["issues"][:5]
+                ],
+                "improvements": [
                     f"Fix: {issue}" for issue in det_result["issues"][:5]
                 ],
                 "summary": f"Deterministic QA failed with {len(det_result['issues'])} issue(s). LLM QA skipped.",
@@ -277,6 +286,7 @@ class QAVerifierAgent:
                 "score": 0,
                 "issues_found": issues,
                 "suggestions": ["Regenerate missing files or adjust plan.files_to_modify"],
+                "improvements": ["Regenerate missing files or adjust plan.files_to_modify"],
                 "summary": "Plan/file mismatch — LLM QA skipped",
                 "deterministic_qa": det_result,
             }
@@ -288,12 +298,7 @@ class QAVerifierAgent:
                 })
             return result
 
-        prompt = self._format_prompt("""Plan summary: {plan_summary}
-    Generated files: {generated_files}
-    Missing files: {missing_files}
-    Builder count: {builder_count}
-
-    Return a strict JSON QA verdict.""",
+        prompt = QA_USER_PROMPT.format(
             plan_summary=plan.get('plan_summary', ''),
             generated_files=', '.join(sorted(generated_files.keys())),
             missing_files=', '.join(missing_files) if missing_files else 'none',
@@ -329,9 +334,13 @@ class QAVerifierAgent:
             "score": qa_verdict.get("score", 100 if passed else 60),
             "issues_found": combined_issues,
             "suggestions": qa_verdict.get("suggestions", []),
+            "improvements": [] if passed else list(qa_verdict.get("suggestions", []) or []),
             "summary": qa_verdict.get("summary", "QA completed"),
             "deterministic_qa": det_result,
         }
+
+        if not passed and not result["improvements"]:
+            result["improvements"] = [f"Fix: {issue}" for issue in combined_issues[:5]]
 
         if tracer:
             tracer.log("QAVerifier", "qa_done", {
@@ -342,11 +351,8 @@ class QAVerifierAgent:
 
         return result
 
-    def _format_prompt(self, template: str, **kwargs) -> str:
-        return PromptTemplate.from_template(template).format(**kwargs)
-
     def _parse_json_response(self, text: str) -> dict:
-        parsed = JsonOutputParser().parse(text)
+        parsed = self.json_parser.parse(text)
         if isinstance(parsed, dict):
             return parsed
         raise ValueError(f"Could not parse QA response as JSON: {text[:200]}")

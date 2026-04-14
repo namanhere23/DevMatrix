@@ -2,11 +2,11 @@
 """
 Swarm Feedback Store — v3.0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-JSON-file-backed store for rejection history and HITL decisions.
+JSON-file-backed store for rejection history.
 Implements the RLAIF (Reinforcement Learning from AI Feedback) loop
 WITHOUT vector databases or embeddings.
 
-Every rejection, every HITL decision, every score becomes training signal.
+Every rejection and score becomes training signal.
 """
 
 import json
@@ -22,7 +22,7 @@ FEEDBACK_DIR = Path.home() / ".nexussentry" / "feedback"
 
 class SwarmFeedbackStore:
     """
-    Persists rejection history and HITL decisions to JSON files.
+    Persists rejection history to JSON files.
     Enables the Architect to learn from past failures using
     keyword-based similarity matching (no embeddings needed).
     """
@@ -30,7 +30,6 @@ class SwarmFeedbackStore:
     def __init__(self, feedback_dir: Optional[Path] = None):
         self.feedback_dir = feedback_dir or FEEDBACK_DIR
         self.failure_file = self.feedback_dir / "failures.jsonl"
-        self.hitl_file = self.feedback_dir / "hitl_decisions.jsonl"
         self.feedback_dir.mkdir(parents=True, exist_ok=True)
 
     def record_rejection(self, task: str, plan: Dict[str, Any],
@@ -52,27 +51,6 @@ class SwarmFeedbackStore:
 
         self._append_jsonl(self.failure_file, record)
         logger.debug(f"Recorded rejection: task='{task[:50]}...' score={score}")
-
-    def record_hitl_decision(self, task: str, plan: Dict[str, Any],
-                             human_decision: str, notes: str = ""):
-        """
-        Human decisions are gold-standard training data.
-        When a human approves something the Critic rejected — that's a signal
-        that the Critic's rubric is too strict in that dimension.
-        When a human rejects something the Critic approved — that's a critical bug.
-        """
-        record = {
-            "task": task,
-            "plan_summary": plan.get("plan_summary", ""),
-            "human_decision": human_decision,
-            "human_notes": notes,
-            "critic_was_wrong": (human_decision == "approve"),
-            "timestamp": time.time(),
-            "keywords": self._extract_keywords(task),
-        }
-
-        self._append_jsonl(self.hitl_file, record)
-        logger.info(f"Recorded HITL decision: {human_decision} for '{task[:50]}...'")
 
     def get_negative_examples_for_task(self, task: str, max_results: int = 3) -> List[Dict[str, Any]]:
         """
@@ -109,49 +87,6 @@ class SwarmFeedbackStore:
         # Sort by similarity, return top N
         scored.sort(key=lambda x: x["similarity"], reverse=True)
         return scored[:max_results]
-
-    def generate_critic_calibration_report(self) -> Dict[str, Any]:
-        """
-        Generate report: where is the Critic wrong?
-        High false-rejection rate → Critic is too strict
-        Any false-approval → Critical security issue
-        """
-        hitl_records = self._read_jsonl(self.hitl_file)
-        if not hitl_records:
-            return {
-                "total_hitl_records": 0,
-                "false_rejection_rate": 0.0,
-                "recommendation": "Insufficient data",
-            }
-
-        # Filter to last 7 days
-        cutoff = time.time() - (7 * 86400)
-        recent = [r for r in hitl_records if r.get("timestamp", 0) > cutoff]
-
-        if not recent:
-            return {
-                "total_hitl_records": len(hitl_records),
-                "recent_records": 0,
-                "false_rejection_rate": 0.0,
-                "recommendation": "No recent HITL data",
-            }
-
-        false_rejections = [r for r in recent if r.get("critic_was_wrong")]
-
-        rate = len(false_rejections) / max(len(recent), 1)
-        recommendation = (
-            "Raise score threshold — Critic is too strict"
-            if rate > 0.3
-            else "Calibration OK"
-        )
-
-        return {
-            "total_hitl_records": len(hitl_records),
-            "recent_records": len(recent),
-            "false_rejection_rate": round(rate, 3),
-            "false_rejections": len(false_rejections),
-            "recommendation": recommendation,
-        }
 
     def get_rejection_stats(self) -> Dict[str, Any]:
         """Get summary statistics about recorded rejections."""

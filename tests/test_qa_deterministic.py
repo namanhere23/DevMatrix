@@ -1,5 +1,5 @@
 import pytest
-from nexussentry.agents.qa_verifier import run_deterministic_qa
+from nexussentry.agents import run_deterministic_qa
 from nexussentry.contracts import GoalContract
 
 def test_mismatched_selectors_fail():

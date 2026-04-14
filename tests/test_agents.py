@@ -1,6 +1,5 @@
 import pytest
-from nexussentry.agents.scout import ScoutAgent
-from nexussentry.agents.architect import ArchitectAgent
+from nexussentry.agents import ArchitectAgent, ScoutAgent
 
 def test_scout_parse_valid_json():
     scout = ScoutAgent()
@@ -69,4 +68,4 @@ def test_architect_classifies_large_task_and_builds_dispatch():
     assert dispatch["builder_count"] == 5
     assert dispatch["builder_slots"] == 5
     assert dispatch["parallel_groups"] == 3
-    assert dispatch["merge_strategy"] == "integrator_then_qa_then_critic"
+    assert dispatch["execution_profile"] in {"parallel", "sequential"}
