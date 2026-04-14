@@ -1,1 +1,1 @@
-# nexussentry/memory — Typed memory and feedback store for swarm learning
+"""Typed and episodic memory helpers for swarm execution."""

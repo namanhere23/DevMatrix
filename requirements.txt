@@ -9,7 +9,7 @@ langchain-google-genai>=2.0.0
 langchain-huggingface>=0.1.0
 pydantic>=2.0
 
-# v3.0: Memory & Learning
+# v3.0: Memory
 chromadb>=0.6.0
 sentence-transformers>=3.4.0
 
@@ -21,10 +21,6 @@ opentelemetry-instrumentation-requests>=0.51b0
 
 # v3.0: Communication & Dashboard
 websockets>=14.0
-
-# v3.0: Protocol & Routing
-a2a-sdk>=0.2.0
-networkx>=3.4.0
 
 # API Server
 fastapi>=0.115.0

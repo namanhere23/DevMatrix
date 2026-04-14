@@ -19,18 +19,6 @@ def test_memory_chain():
     mem.add_verdict({"score": 55, "decision": "reject", "issues": ["Missing tests"]}, attempt=1)
     assert mem.attempt_count == 1
     assert mem.last_score == 55
-
-    # Feedback store
-    from nexussentry.memory.feedback_store import SwarmFeedbackStore
-    fs = SwarmFeedbackStore()
-    fs.record_rejection(
-        task="Add rate limiting to API",
-        plan={"approach": "Use sleep()"},
-        verdict={"score": 35, "issues_found": ["Blocks event loop"]},
-        attempt=1
-    )
-    stats = fs.get_rejection_stats()
-    assert stats["total_rejections"] >= 0  # May or may not persist across test runs
     print("✓ Phase 1 Memory: OK")
 
 
@@ -137,14 +125,6 @@ def test_routing_module():
     print("✓ Phase 3 Routing re-export: OK")
 
 
-def test_learning_module():
-    """Phase 1: Learning module re-export works."""
-    from nexussentry.learning import FeedbackStore
-    store = FeedbackStore()
-    assert hasattr(store, "record_rejection")
-    print("✓ Phase 1 Learning re-export: OK")
-
-
 def test_constitutional_module():
     """Phase 5: Constitutional sub-package re-export works."""
     from nexussentry.security.constitutional import ConstitutionalGuard
@@ -167,7 +147,6 @@ if __name__ == "__main__":
         test_cost_tracker,
         test_ws_dashboard_importable,
         test_routing_module,
-        test_learning_module,
         test_constitutional_module,
     ]
     passed = failed = 0

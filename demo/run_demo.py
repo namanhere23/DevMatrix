@@ -167,16 +167,7 @@ def run_health_check():
     except Exception as e:
         checks.append(("Swarm Watchdog", False, str(e)))
 
-    # Check 15: Feedback Store
-    try:
-        from nexussentry.memory.feedback_store import SwarmFeedbackStore
-        fs = SwarmFeedbackStore()
-        stats = fs.get_rejection_stats()
-        checks.append(("Feedback Store", True, f"{stats.get('total_rejections', 0)} rejections stored"))
-    except Exception as e:
-        checks.append(("Feedback Store", False, str(e)))
-
-    # Check 16: Blackboard
+    # Check 15: Blackboard
     try:
         from nexussentry.communication.blackboard import SwarmBlackboard
         bb = SwarmBlackboard()
@@ -267,7 +258,6 @@ def _print_readiness_report():
         "Agent Factory (dynamic spawning)",
         "Swarm Watchdog (timeout guarantee)",
         "Behavioral Guardrail",
-        "Feedback Store (RLAIF loop)",
         "Blackboard Architecture",
     ]
     for comp in v3_components:

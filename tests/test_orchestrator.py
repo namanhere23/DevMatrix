@@ -425,13 +425,6 @@ class TestDependencyWaveScheduler:
             def audit_swarm_run(self, *_args, **_kwargs):
                 return []
 
-        class FakeFeedbackStore:
-            def record_rejection(self, *_args, **_kwargs):
-                return None
-
-            def get_rejection_stats(self):
-                return {"total_rejections": 0}
-
         class FakeSessionMemory:
             def __init__(self, *_args, **_kwargs):
                 pass
@@ -513,7 +506,6 @@ class TestDependencyWaveScheduler:
         # v3.0 stubs
         monkeypatch.setattr(orchestrator, "ConstitutionalGuard", FakeConstitutionalGuard)
         monkeypatch.setattr(orchestrator, "BehavioralGuardrail", FakeBehavioralGuardrail)
-        monkeypatch.setattr(orchestrator, "SwarmFeedbackStore", FakeFeedbackStore)
         monkeypatch.setattr(orchestrator, "SwarmSessionMemory", FakeSessionMemory)
         monkeypatch.setattr(orchestrator, "SwarmBlackboard", FakeBlackboard)
         monkeypatch.setattr(orchestrator, "SwarmWatchdog", FakeWatchdog)

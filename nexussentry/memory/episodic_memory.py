@@ -42,7 +42,7 @@ class EpisodicMemory:
     def store_episode(self, task: str, plan: dict, result_summary: str, score: int):
         """
         Call this after every Critic approval (score >= 70).
-        Only store successful patterns — failures go to FeedbackStore.
+        Only store successful patterns.
         """
         if not self._available or score < 70:
             return

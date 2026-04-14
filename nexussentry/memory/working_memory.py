@@ -58,7 +58,6 @@ class TaskWorkingMemory(BaseModel):
 
     # Accumulated context (grows with feedback, injected into prompts)
     accumulated_feedback: str = ""
-    negative_examples: List[Dict] = []  # Anti-patterns from FeedbackStore
     positive_examples: List[Dict] = []  # Similar successes from EpisodicMemory
 
     # Budget tracking

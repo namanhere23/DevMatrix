@@ -17,7 +17,6 @@ from langchain_core.prompts import PromptTemplate
 
 from nexussentry.providers.llm_provider import get_provider
 from nexussentry.utils.response_cache import get_cache
-from nexussentry.memory.feedback_store import SwarmFeedbackStore
 from nexussentry.memory.episodic_memory import EpisodicMemory
 
 logger = logging.getLogger("Architect")
@@ -62,7 +61,7 @@ USER_MSG_TEMPLATE = PromptTemplate.from_template(
     Estimated complexity: {estimated_complexity}
 
     Context:
-    {context}{few_shot}{anti_patterns}"""
+    {context}{few_shot}"""
 )
 
 
@@ -116,21 +115,6 @@ class ArchitectAgent:
         except Exception:
             pass  # Episodic memory is optional
 
-        # v3.0: Inject anti-patterns from feedback store
-        anti_pattern_block = ""
-        try:
-            feedback_store = SwarmFeedbackStore()
-            negative_examples = feedback_store.get_negative_examples_for_task(sub_task)
-            if negative_examples:
-                anti_examples = "\n".join([
-                    f"APPROACH TO AVOID: {ex['failed_approach']}\n"
-                    f"REASON IT FAILED: {', '.join(ex['failure_reason']) if isinstance(ex['failure_reason'], list) else ex['failure_reason']}"
-                    for ex in negative_examples
-                ])
-                anti_pattern_block = f"\n\nANTI-PATTERNS (these approaches failed previously on similar tasks):\n{anti_examples}"
-        except Exception:
-            pass  # Feedback store is optional
-
         user_msg = USER_MSG_TEMPLATE.format(
             sub_task=sub_task,
             sub_task_meta=json.dumps(sub_task_meta or {}, ensure_ascii=False),
@@ -139,7 +123,6 @@ class ArchitectAgent:
             estimated_complexity=estimated_complexity,
             context=context or "none",
             few_shot=few_shot_block,
-            anti_patterns=anti_pattern_block,
         )
 
         try:

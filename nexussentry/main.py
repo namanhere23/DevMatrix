@@ -61,7 +61,6 @@ from nexussentry.utils.response_cache import get_cache
 from nexussentry.providers.llm_provider import get_provider
 from nexussentry.utils.swarm_memory import SwarmMemory
 from nexussentry.utils.watchdog import SwarmWatchdog, SwarmTimeoutError
-from nexussentry.memory.feedback_store import SwarmFeedbackStore
 from nexussentry.memory.typed_memory import SwarmSessionMemory
 from nexussentry.communication.blackboard import SwarmBlackboard
 from nexussentry.contracts import RunContext
@@ -133,7 +132,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     # v3.0: New components
     constitutional_guard = ConstitutionalGuard()
     behavioral_guard = BehavioralGuardrail()
-    feedback_store = SwarmFeedbackStore()
     session_memory = SwarmSessionMemory(session_id=getattr(tracer, 'session_id', ''), goal=user_goal)
     blackboard = SwarmBlackboard(namespace=getattr(tracer, 'session_id', 'default'))
     watchdog = SwarmWatchdog(max_wall_time_seconds=int(os.getenv('NEXUS_MAX_WALL_TIME', '300')))
@@ -492,14 +490,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
             feedback = json.dumps(improvement_payload, ensure_ascii=False)
             memory.record_critic_feedback(f"Task '{task_desc}': " + feedback)
 
-            # v3.0: Record rejection in feedback store for future learning
-            feedback_store.record_rejection(
-                task=task_desc,
-                plan=plan,
-                verdict=verdict,
-                attempt=attempt + 1,
-            )
-
             print(
                 "    🔄 Retrying sub-task "
                 f"{task_id}: thresholds not met "
@@ -617,11 +607,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
         # Blackboard summary
         bb_summary = blackboard.summary()
         print(f"    📋 Blackboard:  {bb_summary['total_keys']} keys, {bb_summary['total_writes']} writes")
-
-        # Feedback store stats
-        rejection_stats = feedback_store.get_rejection_stats()
-        if rejection_stats.get('total_rejections', 0) > 0:
-            print(f"    📚 Feedback:    {rejection_stats['total_rejections']} rejections recorded")
 
         # Episodic memory stats
         ep_stats = episodic_memory.stats()
