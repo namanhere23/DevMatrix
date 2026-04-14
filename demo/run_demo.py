@@ -261,7 +261,7 @@ def _print_readiness_report():
     # v3.0: Print new components summary
     print(f"\n  🆕 v3.0 Components:")
     v3_components = [
-        "MoA Critic Panel (3-judge debate)",
+        "Single-Critic Reviewer (retry loop)",
         "Constitutional AI Safety",
         "Dynamic Cost-Aware Routing",
         "Agent Factory (dynamic spawning)",

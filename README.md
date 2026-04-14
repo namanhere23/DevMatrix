@@ -19,18 +19,18 @@ NexusSentry is a coordinated multi-agent system where **4 specialized AI agents*
 
 Instead of asking one AI to do everything (and getting mediocre results), NexusSentry runs a **hive mind** of specialized agents:
 
-| Agent                  | Role              | What It Does                                                          | Default Provider |
-| ---------------------- | ----------------- | --------------------------------------------------------------------- | ---------------- |
-| 🔍 **Scout**           | Task Decomposer   | Breaks a high-level goal into 3-5 actionable sub-tasks                | 💎 Gemini        |
-| 🏗️ **Architect**       | Technical Planner | Creates a precise execution plan for each sub-task                    | 🌐 OpenRouter    |
-| 🔧 **Fixer**           | Executor          | Runs the plan via the Builder (in-process LLM code generation)        | Auto             |
-| 📋 **Critic**          | Quality Gate      | Reviews output — approves, rejects (with feedback loop), or escalates | 🧠 Grok          |
-| 🛡️ **Guardian**        | Security Scanner  | 7-layer threat detection (prompt injection, PII, XSS, etc.)           | 💎 Gemini        |
-| 👤 **User Permission** | Retry Gate        | Asks user whether to retry once or return current output              | —                |
+| Agent              | Role              | What It Does                                                  | Default Provider |
+| ------------------ | ----------------- | ------------------------------------------------------------- | ---------------- |
+| 🔍 **Scout**       | Task Decomposer   | Breaks a high-level goal into 3-5 actionable sub-tasks        | 💎 Gemini        |
+| 🏗️ **Architect**   | Technical Planner | Creates a precise execution plan for each sub-task            | 🌐 OpenRouter    |
+| 🔧 **Builder**     | Executor          | Runs the plan via code generation (in-process LLM)            | Auto             |
+| ✅ **QA Verifier** | Quality Scorer    | Tests output against acceptance criteria with numeric score   | 🧠 Grok          |
+| 📋 **Critic**      | Quality Gate      | Reviews output — approves, rejects (with retry feedback loop) | 🧠 Grok          |
+| 🛡️ **Guardian**    | Security Scanner  | 7-layer threat detection (prompt injection, PII, XSS, etc.)   | 💎 Gemini        |
 
 ### The Key Innovation: **Self-Correcting Feedback Loop**
 
-When the Critic rejects the Fixer's work, it sends specific feedback back to the Architect, who creates an improved plan. This loop runs up to 3 times before escalating to a human — mimicking how real engineering teams iterate.
+When the Critic rejects the Builder's work, it sends specific QA+Critic feedback back to the Architect, who creates an improved plan. This loop runs up to 3 times before returning the best result — mimicking how real engineering teams iterate.
 
 ### Multi-Provider Intelligence
 
@@ -40,8 +40,9 @@ Each agent automatically routes to the **best AI provider** for its role:
 🔍 Scout        → 💎 Gemini     (fast, cheap decomposition)
 🏗️ Architect    → 🌐 OpenRouter (diverse model access)
 📋 Critic       → 🧠 Grok      (fast reasoning)
+✅ QA Verifier  → 🧠 Grok      (deterministic scoring)
 🛡️ Guardian     → 💎 Gemini     (speed for security scanning)
-🔧 Fixer        → 🔄 Auto      (whatever's available)
+🔧 Builder      → 🔄 Auto      (whatever's available)
 ```
 
 If a provider is down, the system automatically falls through to the next available one. **No keys at all? Mock mode works for demos.**
@@ -68,7 +69,8 @@ graph TB
     subgraph AgentSwarm["🧠 Agent Swarm"]
         Scout["🔍 Scout<br/>Task Decomposer"]
         Architect["🏗️ Architect<br/>Technical Planner"]
-        Fixer["🔧 Fixer<br/>Executor"]
+        Builder["🔧 Builder<br/>Executor"]
+        QAVerifier["✅ QA Verifier<br/>Quality Scorer"]
         Critic["📋 Critic<br/>Quality Gate"]
     end
 
@@ -77,18 +79,15 @@ graph TB
         Dashboard["Web Dashboard<br/>Real-Time UI"]
     end
 
-    Permission["👤 User Permission<br/>Retry or Return"]
-
     User -->|"goal"| Guardian
     Guardian -->|"safe ✅"| Scout
     Guardian -->|"blocked 🚫"| User
     Scout -->|"sub-tasks"| Architect
-    Architect -->|"plan"| Fixer
-    Fixer -->|"generated code"| Critic
+    Architect -->|"plan"| Builder
+    Builder -->|"generated code"| QAVerifier
+    QAVerifier -->|"score + issues"| Critic
     Critic -->|"approve ✅"| User
-    Critic -->|"reject ❌"| Architect
-    Critic -->|"needs decision"| Permission
-    Permission -->|"decision"| User
+    Critic -->|"reject + feedback"| Architect
 
     Scout -.->|"LLM call"| ProviderLayer
     Architect -.->|"LLM call"| ProviderLayer
@@ -97,7 +96,8 @@ graph TB
 
     Scout -.->|"events"| Tracer
     Architect -.->|"events"| Tracer
-    Fixer -.->|"events"| Tracer
+    Builder -.->|"events"| Tracer
+    QAVerifier -.->|"events"| Tracer
     Critic -.->|"events"| Tracer
     Tracer -.->|"polls"| Dashboard
 
@@ -118,9 +118,9 @@ sequenceDiagram
     participant S as 🔍 Scout
     participant P as 🤖 Provider
     participant A as 🏗️ Architect
-    participant F as 🔧 Fixer
+    participant B as 🔧 Builder
+    participant Q as ✅ QA Verifier
     participant C as 📋 Critic
-    participant H as 👤 User Permission
 
     U->>G: Submit goal
     G->>G: 7-layer security scan
@@ -135,23 +135,24 @@ sequenceDiagram
     P-->>S: Sub-tasks JSON
     S->>A: Sub-task 1
 
-    loop Max 3 attempts
+    loop Max 3 attempts (retry if rejected)
         A->>P: Plan (via OpenRouter)
         P-->>A: Execution plan
-        A->>F: Send plan
-        F->>F: Generate code (LLM builders)
-        F->>C: Submit for review
-        C->>P: Review (via Grok)
+        A->>B: Send plan
+        B->>B: Generate code (LLM)
+        B->>Q: Submit for scoring
+        Q->>Q: Deterministic QA checks
+        Q-->>C: QA score + issues
+        C->>P: Review execution (via Grok)
         P-->>C: Verdict
 
-        alt Score ≥ 85
+        alt QA ≥ 70 AND Critic ≥ 72
             C-->>U: ✅ Approved
-        else Score < 70
-            C-->>A: ❌ Rejected + feedback
-        else Max rejections
-            C->>H: 🚨 Escalate
-            H->>U: Request approval
-            U-->>H: 👍 or 👎
+        else Score < threshold
+            C-->>A: ❌ Rejected + QA+Critic feedback
+            Note over A: Next attempt with improvements
+        else All 3 attempts exhausted
+            C-->>U: ⏭️ Best attempt (pass-through)
         end
     end
 ```
@@ -369,7 +370,7 @@ docker run --env-file .env -p 7777:7777 nexussentry
 3. **7-Layer Security** — Regex + LLM scanning, works fully offline (layers 1-5 need no API)
 4. **Response Caching** — MD5-keyed disk cache prevents demo failures from API outages
 5. **Real-Time Dashboard** — Zero-dependency HTTP server with glassmorphism UI
-6. **User Permission Gate** — local y/n decision for retry or returning current output
+6. **Deterministic QA** — HTML/CSS selector validation + error detection before Critic review
 7. **Graceful Degradation** — Every component has fallback behavior; nothing crashes
 8. **Mock Mode** — Full demo works even with zero API keys configured
 
@@ -390,5 +391,5 @@ MIT
 
 <p align="center">
   <b>Python orchestration · multi-provider LLM agents</b><br/>
-  <sub>NexusSentry v2.0 — Multi-Agent Orchestration & Swarm Intelligence</sub>
+  <sub>NexusSentry v3.0 — Multi-Agent Orchestration with Single-Critic Reviewer and Swarm Intelligence</sub>
 </p>

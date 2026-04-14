@@ -5,7 +5,7 @@
 ║                                                           ║
 ║  Python orchestration · multi-provider LLM agents         ║
 ║                                                           ║
-║  Coordinates specialized AI agents + MoA critic panel     ║
+║  Coordinates specialized AI agents + single-critic        ║
 ║  + constitutional safety + real-time WebSocket dashboard. ║
 ║                                                           ║
 ║  Multi-Provider AI: Gemini │ Groq │ OpenRouter │ HuggingFace║

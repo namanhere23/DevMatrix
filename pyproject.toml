@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexussentry"
 version = "3.0.0"
-description = "Autonomous Agent Civilization — Multi-Agent Orchestration with MoA Critic Panel, Constitutional Safety, and Dynamic Routing"
+description = "Autonomous Agent Civilization — Multi-Agent Orchestration with Single-Critic Reviewer, Constitutional Safety, and Dynamic Routing"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
