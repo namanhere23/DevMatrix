@@ -5,8 +5,6 @@ Agent F — The Critic
 Validates execution output against strict quality criteria.
 Can approve, reject (loops back to Architect), or escalate to human.
 
-Now enforces GoalContract: cannot approve outputs that violate the contract.
-
 Role in the swarm: Quality gate. The ruthless reviewer.
 Provider preference: Groq (fast reasoning for quick reviews)
 """

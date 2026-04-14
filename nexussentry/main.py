@@ -148,7 +148,6 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
     run_context = RunContext(
         run_id=run_id,
         run_output_dir=run_output_dir,
-        goal_contract=None,
     )
 
     # Create canonical output structure up front
@@ -377,30 +376,48 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
             if slow:
                 await asyncio.sleep(1.5)
 
-            # Use single-critic review for low-latency validation.
-            verdict = await asyncio.to_thread(
-                critic.review,
-                original_task=task_desc,
-                plan=plan,
-                execution_result=execution_result,
-                tracer=tracer,
-            )
+            if not qa_passes_threshold:
+                print(
+                    "\n📋 Critic skipped: QA gate failed "
+                    f"({qa_score}/{qa_threshold})."
+                )
+                verdict = {
+                    "decision": "reject",
+                    "score": 0,
+                    "reasoning": "Critic skipped because QA threshold was not met.",
+                    "issues_found": list(qa_result.get("issues_found", []) or []),
+                    "suggestions": list(qa_result.get("suggestions", []) or []),
+                    "improvements": list(qa_result.get("improvements", []) or []),
+                    "skipped": True,
+                    "skipped_reason": "qa_threshold_not_met",
+                }
+                numeric_score = 0
+                critic_passes_threshold = False
+            else:
+                # Use single-critic review for low-latency validation only after QA passes.
+                verdict = await asyncio.to_thread(
+                    critic.review,
+                    original_task=task_desc,
+                    plan=plan,
+                    execution_result=execution_result,
+                    tracer=tracer,
+                )
+
+                score_str = verdict.get("score", "?")
+                try:
+                    numeric_score = int(score_str)
+                except (ValueError, TypeError):
+                    numeric_score = 0
+                critic_passes_threshold = numeric_score >= critic_threshold
+                critic_improvements = []
+                if not critic_passes_threshold:
+                    critic_improvements = list(verdict.get("suggestions", []) or [])
+                    if not critic_improvements:
+                        critic_improvements = [f"Fix: {issue}" for issue in verdict.get("issues_found", [])[:5]]
+                verdict["improvements"] = critic_improvements
 
             # v3.0: Record verdict in typed memory
             task_memory.record_verdict(verdict)
-
-            score_str = verdict.get("score", "?")
-            try:
-                numeric_score = int(score_str)
-            except (ValueError, TypeError):
-                numeric_score = 0
-            critic_passes_threshold = numeric_score >= critic_threshold
-            critic_improvements = []
-            if not critic_passes_threshold:
-                critic_improvements = list(verdict.get("suggestions", []) or [])
-                if not critic_improvements:
-                    critic_improvements = [f"Fix: {issue}" for issue in verdict.get("issues_found", [])[:5]]
-            verdict["improvements"] = critic_improvements
 
             combined_score = min(qa_score, numeric_score)
             if combined_score > best_attempt_score:
@@ -483,7 +500,11 @@ async def run_swarm(user_goal: str, enable_dashboard: bool = True, slow: bool = 
                 attempt=attempt + 1,
             )
 
-            print(f"    🔄 Retrying sub-task {task_id} with Critic feedback...")
+            print(
+                "    🔄 Retrying sub-task "
+                f"{task_id}: thresholds not met "
+                f"(QA {qa_score}/{qa_threshold}, Critic {numeric_score}/{critic_threshold})."
+            )
 
         # If we exhausted all attempts, pass through with best available result.
         if best_attempt_data:

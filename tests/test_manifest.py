@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from nexussentry.contracts import GoalContract, RunContext
+from nexussentry.contracts import RunContext
 from nexussentry.agents import IntegratorAgent
 
 def _capture_written_files(monkeypatch):
@@ -17,11 +17,9 @@ def _capture_written_files(monkeypatch):
 def test_manifest_matches_final_summary(monkeypatch):
     written = _capture_written_files(monkeypatch)
     run_dir = Path.cwd() / "manifest_test_run"
-    contract = GoalContract(single_file=True, allowed_output_files=["index.html"])
     run_context = RunContext(
         run_id="test_run",
         run_output_dir=run_dir,
-        goal_contract=contract,
     )
 
     integrator = IntegratorAgent(run_context=run_context)
@@ -47,11 +45,9 @@ def test_manifest_matches_final_summary(monkeypatch):
 def test_manifest_contains_provider_failures(monkeypatch):
     written = _capture_written_files(monkeypatch)
     run_dir = Path.cwd() / "manifest_test_run"
-    contract = GoalContract()
     run_context = RunContext(
         run_id="test_run",
         run_output_dir=run_dir,
-        goal_contract=contract,
     )
     run_context.record_provider_failure("gemini", "Quota exceeded")
 
@@ -80,7 +76,6 @@ def test_promote_to_final_preserves_relative_directories(monkeypatch):
     run_context = RunContext(
         run_id="test_run",
         run_output_dir=run_dir,
-        goal_contract=GoalContract(),
     )
     integrator = IntegratorAgent(run_context=run_context)
 
