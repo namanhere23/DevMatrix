@@ -215,6 +215,15 @@ class TestBuilderPipeline:
             builder_result,
         )
 
+        class FakeQAProvider:
+            def get_provider_for_agent(self, _agent_name):
+                return "mock"
+
+            def chat(self, **_kwargs):
+                return '{"decision":"pass","score":95,"issues_found":[],"suggestions":[],"summary":"ok"}'
+
+        monkeypatch.setitem(qa.verify.__globals__, "get_provider", lambda: FakeQAProvider())
+
         qa_result = qa.verify(
             {"plan_summary": "Build a small app", "files_to_modify": ["app.py"]},
             integration_result["generated_files"],
@@ -471,10 +480,9 @@ class TestDependencyWaveScheduler:
             def print_summary(self):
                 return None
 
-        def fake_run_context_init(self, run_id, run_output_dir, goal_contract):
+        def fake_run_context_init(self, run_id, run_output_dir):
             self.run_id = run_id
             self.run_output_dir = run_output_dir
-            self.goal_contract = goal_contract
             self.final_artifact_dir = run_output_dir / "final"
             self.attempts_dir = run_output_dir / "attempts"
             self.attempt_index_by_task = {}
@@ -540,7 +548,7 @@ class TestDependencyWaveScheduler:
         assert state["build_starts"]["C"] >= state["build_ends"]["B"]
 
     def test_qa_failure_retries_before_critic(self, monkeypatch):
-        """Verifier and critic should both run each attempt; retries use score thresholds."""
+        """QA failures retry immediately and only QA-passing attempts reach the critic."""
         sub_tasks = [{"id": 1, "task": "A", "priority": "high", "depends_on": []}]
         orchestrator, state = self._install_swarm_stubs(
             monkeypatch,
@@ -561,7 +569,7 @@ class TestDependencyWaveScheduler:
         assert results[0]["status"] == "done"
         assert results[0]["attempts"] == 2
         assert state["architect_calls"] == 2
-        assert state["critic_calls"] == 2
+        assert state["critic_calls"] == 1
 
     def test_retry_exhaustion_passes_through_and_unblocks_dependents(self, monkeypatch):
         """After max retries, task should pass through and allow dependent task execution."""

@@ -1,4 +1,5 @@
 import os
+import time
 from unittest.mock import patch
 import pytest
 from nexussentry.providers.llm_provider import LLMProvider
@@ -33,6 +34,49 @@ def test_short_retry_does_not_disable_provider():
     # Second time disables it
     provider._maybe_disable_provider("gemini", Exception("Rate limit exceeded. Retry after: 5s"))
     assert "gemini" in provider._disabled_providers
+
+
+def test_key_rotation_skips_failed_key(monkeypatch):
+    provider = LLMProvider()
+    provider._provider_key_pools = {"gemini": ["gemini_key_1", "gemini_key_2"]}
+    provider._provider_key_state = {
+        "gemini": {
+            "gemini_key_1": provider._key_state("gemini", "gemini_key_1"),
+            "gemini_key_2": provider._key_state("gemini", "gemini_key_2"),
+        }
+    }
+    provider._available = {"gemini": "gemini_key_1"}
+
+    calls = []
+
+    def fake_call(provider_name, system, user_msg, max_tokens, api_key=None):
+        calls.append(api_key)
+        if api_key == "gemini_key_1":
+            raise Exception("Rate limit exceeded. Retry after: 5s")
+        return "success"
+
+    monkeypatch.setattr(provider, "_call_with_langchain", fake_call)
+
+    result = provider._call_provider_chain("gemini", "sys", "user", 100)
+
+    assert result == "success"
+    assert calls == ["gemini_key_1", "gemini_key_2"]
+    assert provider._key_state("gemini", "gemini_key_1").cooldown_until > 0
+
+
+def test_key_cooldown_is_respected():
+    provider = LLMProvider()
+    provider._provider_key_pools = {"gemini": ["gemini_key_1", "gemini_key_2"]}
+    provider._provider_key_state = {
+        "gemini": {
+            "gemini_key_1": provider._key_state("gemini", "gemini_key_1"),
+            "gemini_key_2": provider._key_state("gemini", "gemini_key_2"),
+        }
+    }
+    provider._key_state("gemini", "gemini_key_1").cooldown_until = time.time() + 3600
+    provider._provider_rotation_index["gemini"] = 0
+
+    assert provider._select_provider_key("gemini") == "gemini_key_2"
 
 def test_413_retries_with_truncation():
     provider = LLMProvider()

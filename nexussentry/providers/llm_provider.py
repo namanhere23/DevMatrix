@@ -11,7 +11,7 @@
 ║    • Mock                 — demo mode, no keys needed     ║
 ║                                                           ║
 ║  Auto-detects available API keys from .env                ║
-║  Zero extra SDKs — uses raw HTTP for Groq/OpenRouter/Gemini║
+║  LangChain-native provider clients for all model backends ║
 ╚═══════════════════════════════════════════════════════════╝
 """
 
@@ -22,17 +22,16 @@ import sys
 import logging
 import time
 import threading
+from dataclasses import dataclass
 from typing import Any, Optional
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from langchain_openai import ChatOpenAI
-
 from nexussentry.providers.dynamic_router import DynamicRouter
 
 logger = logging.getLogger("LLMProvider")
-
 
 def _safe_print(text: str):
     """Print with safe encoding fallback for Windows cp1252 consoles."""
@@ -63,14 +62,14 @@ PROVIDER_CONFIG = {
     "openrouter": {
         "env_keys": ["OPENROUTER_API_KEY"],
         "base_url": "https://openrouter.ai/api/v1",
-        "default_model": "google/gemini-2.0-flash-001",
+        "default_model": "minimax/minimax-m2.7",
         "label": "OpenRouter",
         "icon": "🌐",
     },
     "huggingface": {
         "env_keys": ["HUGGINGFACE_API_KEY", "HUGGINGFACEHUB_API_TOKEN", "HF_TOKEN"],
         "base_url": "https://router.huggingface.co/v1",
-        "default_model": "Qwen/Qwen2.5-7B-Instruct",
+        "default_model": "Qwen/Qwen3-Coder-Next",
         "label": "Hugging Face",
         "icon": "🤖",
     },
@@ -91,6 +90,17 @@ AGENT_PREFERENCES = {
 }
 
 
+@dataclass
+class ProviderKeyState:
+    """Runtime health state for a single API key."""
+
+    disabled: bool = False
+    failure_count: int = 0
+    cooldown_until: float = 0.0
+    last_used: float = 0.0
+    last_error: str = ""
+
+
 class LLMProvider:
     """
     Unified interface for calling ANY LLM provider.
@@ -100,6 +110,9 @@ class LLMProvider:
 
     def __init__(self):
         self._available = {}
+        self._provider_key_pools: dict[str, list[str]] = {}
+        self._provider_key_state: dict[str, dict[str, ProviderKeyState]] = {}
+        self._provider_rotation_index: dict[str, int] = {}
         self._detect_providers()
         self._call_count = 0
         self._provider_usage = {}  # Track which provider was used how many times
@@ -133,18 +146,15 @@ class LLMProvider:
         load_dotenv(override=False)
 
         for name, config in PROVIDER_CONFIG.items():
-            key = self._read_first_env(config.get("env_keys", []))
-            # Filter out placeholder/dummy values
-            is_placeholder = (
-                not key
-                or key.lower().endswith("_here")
-                or key.lower().startswith("your_")
-                or key == "YOUR_BOT_TOKEN"
-                or len(key) < 10
-            )
-            if not is_placeholder:
-                self._available[name] = key
-                logger.info(f"  {config['label']}: Available")
+            keys = self._read_provider_keys(name, config.get("env_keys", []))
+            if keys:
+                self._provider_key_pools[name] = keys
+                self._provider_rotation_index[name] = 0
+                self._provider_key_state[name] = {
+                    key: ProviderKeyState() for key in keys
+                }
+                self._available[name] = keys[0]
+                logger.info(f"  {config['label']}: Available ({len(keys)} key(s))")
             else:
                 logger.debug(f"  {config['label']}: Not configured")
 
@@ -159,15 +169,111 @@ class LLMProvider:
                 return value
         return ""
 
+    def _read_provider_keys(self, provider_name: str, env_keys: list[str]) -> list[str]:
+        """Read all configured keys for a provider, including list-style aliases."""
+        raw_values: list[str] = []
+
+        list_alias = os.getenv(f"{provider_name.upper()}_API_KEYS", "").strip()
+        if list_alias:
+            raw_values.append(list_alias)
+
+        for env_key in env_keys:
+            value = os.getenv(env_key, "").strip()
+            if value:
+                raw_values.append(value)
+
+        for index in range(1, 11):
+            numbered = os.getenv(f"{provider_name.upper()}_API_KEY_{index}", "").strip()
+            if numbered:
+                raw_values.append(numbered)
+
+        keys: list[str] = []
+        seen: set[str] = set()
+        for raw in raw_values:
+            for candidate in re.split(r"[\n,;]+", raw):
+                key = candidate.strip()
+                if not self._is_placeholder_key(key) and key not in seen:
+                    seen.add(key)
+                    keys.append(key)
+
+        return keys
+
+    def _is_placeholder_key(self, key: str) -> bool:
+        """Return True for dummy or obviously invalid values."""
+        lowered = key.lower()
+        return (
+            not key
+            or lowered.endswith("_here")
+            or lowered.startswith("your_")
+            or key == "YOUR_BOT_TOKEN"
+            or len(key) < 10
+        )
+
     @property
     def available_providers(self) -> list[str]:
         """List of providers with valid API keys."""
+        if self._provider_key_pools:
+            return [provider for provider in self._provider_key_pools if self._provider_has_healthy_key(provider)]
         return list(self._available.keys())
 
     @property
     def mock_mode(self) -> bool:
         """True if no providers are available."""
-        return len(self._available) == 0
+        return len(self.available_providers) == 0
+
+    def _provider_has_healthy_key(self, provider: str) -> bool:
+        """Check whether a provider has at least one usable key right now."""
+        if provider in self._disabled_providers:
+            return False
+
+        if provider not in self._provider_key_pools:
+            return provider in self._available
+
+        return self._select_provider_key(provider) is not None
+
+    def _key_state(self, provider: str, api_key: str) -> ProviderKeyState:
+        """Fetch or create health state for a provider key."""
+        provider_state = self._provider_key_state.setdefault(provider, {})
+        state = provider_state.get(api_key)
+        if state is None:
+            state = ProviderKeyState()
+            provider_state[api_key] = state
+        return state
+
+    def _key_is_ready(self, provider: str, api_key: str) -> bool:
+        """Return True if a key is not disabled and not cooling down."""
+        state = self._key_state(provider, api_key)
+        if state.disabled:
+            return False
+        if state.cooldown_until and time.time() < state.cooldown_until:
+            return False
+        return True
+
+    def _select_provider_key(self, provider: str, exclude_keys: Optional[set[str]] = None) -> Optional[str]:
+        """Select the next healthy key for a provider using round-robin rotation."""
+        exclude_keys = exclude_keys or set()
+
+        if provider not in self._provider_key_pools:
+            key = self._available.get(provider)
+            if key and key not in exclude_keys and self._key_is_ready(provider, key):
+                return key
+            return None
+
+        pool = self._provider_key_pools.get(provider, [])
+        if not pool:
+            return None
+
+        start_index = self._provider_rotation_index.get(provider, 0) % len(pool)
+        for offset in range(len(pool)):
+            index = (start_index + offset) % len(pool)
+            key = pool[index]
+            if key in exclude_keys:
+                continue
+            if self._key_is_ready(provider, key):
+                self._provider_rotation_index[provider] = (index + 1) % len(pool)
+                return key
+
+        return None
 
     def get_provider_for_agent(self, agent_name: str,
                                 task_complexity: str = "medium",
@@ -182,7 +288,7 @@ class LLMProvider:
                 security_sensitive=security_sensitive,
             )
             # Safety net: verify the router returned a valid provider
-            if selected and (selected in self._available or selected == "mock"):
+            if selected and (selected == "mock" or self._provider_has_healthy_key(selected)):
                 return selected
         except Exception:
             pass
@@ -192,16 +298,16 @@ class LLMProvider:
 
     def _resolve_provider(self, prefer: str = "auto") -> str:
         """Resolve which provider to actually use."""
-        if not self._available:
+        if not self.available_providers:
             return "mock"
 
         # If specific provider requested and available, use it
-        if prefer != "auto" and prefer in self._available and prefer not in self._disabled_providers:
+        if prefer != "auto" and self._provider_has_healthy_key(prefer):
             return prefer
 
         # Auto: follow priority order
         for p in AUTO_PRIORITY:
-            if p in self._available and p not in self._disabled_providers:
+            if self._provider_has_healthy_key(p):
                 return p
 
         return "mock"
@@ -247,7 +353,7 @@ class LLMProvider:
                 return self._mock_response(system, user_msg, agent_name=agent_name)
 
             with self._request_gate:
-                result = self._call_with_langchain(provider, system, user_msg, max_tokens)
+                result = self._call_provider_chain(provider, system, user_msg, max_tokens)
             self._last_provider_successful = provider
 
             # v3.0: Record outcome for dynamic routing
@@ -280,7 +386,6 @@ class LLMProvider:
             )
 
             logger.warning(f"  ⚠️  {label} failed: {e}. Trying fallback...")
-            self._maybe_disable_provider(provider, e)
 
             # HTTP 413: prompt too large — retry with compressed context
             if "413" in err_msg or "payload too large" in err_msg:
@@ -297,16 +402,15 @@ class LLMProvider:
                        max_tokens: int, exclude: str) -> str:
         """Try other providers if primary fails."""
         for p in AUTO_PRIORITY:
-            if p != exclude and p in self._available and p not in self._disabled_providers:
+            if p != exclude and self._provider_has_healthy_key(p):
                 try:
                     logger.info(f"  🔄 Fallback → {PROVIDER_CONFIG[p]['label']}")
                     with self._request_gate:
-                        result = self._call_with_langchain(p, system, user_msg, max_tokens)
+                        result = self._call_provider_chain(p, system, user_msg, max_tokens)
                     self._last_provider_successful = p
                     return result
                 except Exception as e:
                     logger.warning(f"  ⚠️  Fallback {p} also failed: {e}")
-                    self._maybe_disable_provider(p, e)
                     continue
 
         logger.warning("  ⚠️  All providers failed. Using mock response.")
@@ -349,12 +453,37 @@ class LLMProvider:
 
         return str(content)
 
-    def _call_with_langchain(self, provider: str, system: str, user_msg: str, max_tokens: int) -> str:
+    def _call_provider_chain(self, provider: str, system: str, user_msg: str, max_tokens: int) -> str:
+        """Try all healthy keys for a provider before moving to fallback providers."""
+        if provider not in self._provider_key_pools:
+            api_key = self._available.get(provider)
+            if not api_key:
+                raise RuntimeError(f"No API keys available for provider '{provider}'")
+            return self._call_with_langchain(provider, system, user_msg, max_tokens, api_key=api_key)
+
+        tried_keys: set[str] = set()
+        while True:
+            api_key = self._select_provider_key(provider, exclude_keys=tried_keys)
+            if not api_key:
+                raise RuntimeError(f"No healthy API keys available for provider '{provider}'")
+
+            try:
+                result = self._call_with_langchain(provider, system, user_msg, max_tokens, api_key=api_key)
+                self._key_state(provider, api_key).last_used = time.time()
+                self._available[provider] = api_key
+                return result
+            except Exception as err:
+                tried_keys.add(api_key)
+                self._register_key_failure(provider, api_key, err)
+                if len(tried_keys) >= len(self._provider_key_pools.get(provider, [])):
+                    raise
+
+    def _call_with_langchain(self, provider: str, system: str, user_msg: str, max_tokens: int, api_key: Optional[str] = None) -> str:
         """Use LangChain chat models for provider invocation."""
 
         config = PROVIDER_CONFIG[provider]
         model = config["default_model"]
-        api_key = self._available[provider]
+        api_key = api_key or self._available[provider]
         messages = self._build_chat_messages(system, user_msg)
 
         if provider == "gemini":
@@ -390,8 +519,71 @@ class LLMProvider:
         response = chat_model.invoke(messages)
         return self._extract_text_content(getattr(response, "content", response))
 
+    def _register_key_failure(self, provider: str, api_key: str, err: Exception):
+        """Record a key failure and disable/cool down the specific key when appropriate."""
+        msg = str(err).lower()
+        self._provider_failures[provider] = self._provider_failures.get(provider, 0) + 1
+
+        state = self._key_state(provider, api_key)
+        state.failure_count += 1
+        state.last_error = str(err)[:200]
+
+        is_resource_exhausted = (
+            "resource_exhausted" in msg
+            or "resource exhausted" in msg
+            or "quota" in msg
+            or "tokens per day" in msg
+            or "tpd" in msg
+        )
+        is_rate_hard_limit = (
+            "requests per minute" in msg
+            or "rpm" in msg
+            or "rate_limit_exceeded" in msg
+            or "rate limit exceeded" in msg
+        )
+        has_long_retry = False
+        retry_match = re.search(r'retry[\s_-]*after[:\s]*(\d+)', msg)
+        if retry_match:
+            retry_secs = int(retry_match.group(1))
+            if retry_secs > 10:
+                has_long_retry = True
+
+        is_fatal = (
+            "402" in msg
+            or "payment required" in msg
+            or "401" in msg
+            or "unauthorized" in msg
+            or "invalid api key" in msg
+            or "insufficient" in msg
+            or is_resource_exhausted
+            or has_long_retry
+            or (is_rate_hard_limit and self._provider_failures.get(provider, 0) >= 2)
+        )
+        now = time.time()
+
+        if is_fatal:
+            state.disabled = True
+            reason = "resource exhaustion" if is_resource_exhausted else "hard failure"
+            logger.warning(
+                f"  ⛔ Disabling key for provider '{provider}' ({reason})."
+            )
+            return
+
+        if is_rate_hard_limit:
+            retry_after = 60
+            if retry_match:
+                retry_after = max(30, int(retry_match.group(1)))
+            state.cooldown_until = now + retry_after
+            logger.warning(
+                f"  ⏳ Cooling down key for provider '{provider}' for {retry_after}s."
+            )
+            return
+
+        # Generic transient failure: short cooldown before key can be retried.
+        state.cooldown_until = now + 15
+
     def _maybe_disable_provider(self, provider: str, err: Exception):
-        """Disable providers with hard quota/auth failures for the remainder of this run."""
+        """Backward-compatible provider disable hook for tests and legacy callers."""
         msg = str(err).lower()
         self._provider_failures[provider] = self._provider_failures.get(provider, 0) + 1
 
@@ -415,12 +607,6 @@ class LLMProvider:
             if retry_secs > 10:
                 has_long_retry = True
 
-        # Immediate disable for resource exhaustion or long retry windows
-        is_immediate_disable = (
-            is_resource_exhausted
-            or has_long_retry
-        )
-
         is_fatal = (
             "402" in msg
             or "payment required" in msg
@@ -428,137 +614,14 @@ class LLMProvider:
             or "unauthorized" in msg
             or "invalid api key" in msg
             or "insufficient" in msg
-            or is_immediate_disable
+            or is_resource_exhausted
+            or has_long_retry
             or (is_rate_hard_limit and self._provider_failures.get(provider, 0) >= 2)
         )
         if is_fatal and provider in self._available and provider not in self._disabled_providers:
             self._disabled_providers.add(provider)
             reason = "resource exhaustion" if is_resource_exhausted else "hard failure"
             logger.warning(f"  ⛔ Disabling provider '{provider}' for this run ({reason}).")
-
-    def _call_gemini(self, system: str, user_msg: str, max_tokens: int) -> str:
-        """Call Google Gemini API via REST."""
-        import requests
-
-        api_key = self._available["gemini"]
-        model = PROVIDER_CONFIG["gemini"]["default_model"]
-        url = f"{PROVIDER_CONFIG['gemini']['base_url']}/models/{model}:generateContent"
-
-        payload = {
-            "contents": [
-                {"role": "user", "parts": [{"text": f"{system}\n\n{user_msg}"}]}
-            ],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": 0.7,
-            },
-            "systemInstruction": {
-                "parts": [{"text": system}]
-            }
-        }
-
-        headers = {
-            "x-goog-api-key": api_key,
-            "Content-Type": "application/json"
-        }
-
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-
-        # Extract text from Gemini response
-        try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError):
-            raise ValueError(f"Unexpected Gemini response: {json.dumps(data)[:200]}")
-
-    def _call_groq(self, system: str, user_msg: str, max_tokens: int) -> str:
-        """Call Groq API (OpenAI-compatible)."""
-        import requests
-
-        api_key = self._available["groq"]
-        url = f"{PROVIDER_CONFIG['groq']['base_url']}/chat/completions"
-        model = PROVIDER_CONFIG["groq"]["default_model"]
-
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_msg},
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.7,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-
-        return data["choices"][0]["message"]["content"]
-
-    def _call_openrouter(self, system: str, user_msg: str, max_tokens: int) -> str:
-        """Call OpenRouter API (OpenAI-compatible, routes to many models)."""
-        import requests
-
-        api_key = self._available["openrouter"]
-        url = f"{PROVIDER_CONFIG['openrouter']['base_url']}/chat/completions"
-        model = PROVIDER_CONFIG["openrouter"]["default_model"]
-
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_msg},
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.7,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://nexussentry.dev",
-            "X-Title": "NexusSentry",
-        }
-
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-
-        return data["choices"][0]["message"]["content"]
-
-    def _call_huggingface(self, system: str, user_msg: str, max_tokens: int) -> str:
-        """Call Hugging Face Inference Router API (OpenAI-compatible)."""
-        import requests
-
-        api_key = self._available["huggingface"]
-        url = f"{PROVIDER_CONFIG['huggingface']['base_url']}/chat/completions"
-        model = PROVIDER_CONFIG["huggingface"]["default_model"]
-
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_msg},
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.7,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
 
     def _mock_response(self, system: str, user_msg: str, agent_name: str = "") -> str:
         """

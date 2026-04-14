@@ -4,10 +4,9 @@ Agent E — QA Verifier
 Validates integrated artifacts before they reach the Critic.
 
 Runs deterministic pre-checks BEFORE any LLM verdict:
-  1. File-set match against GoalContract
-  2. Truncation / placeholder detection
-  3. Single-file web integrity (inline <style>/<script>, no sidecar refs)
-  4. DOM selector cross-check (JS references exist in HTML)
+    1. Truncation / placeholder detection
+    2. Single-file web integrity (inline <style>/<script>, no sidecar refs)
+    3. DOM selector cross-check (JS references exist in HTML)
 
 If deterministic checks fail, skips LLM QA entirely.
 """
@@ -163,7 +162,7 @@ def _check_dom_selector_crossref(content: str, filename: str) -> list[str]:
     return issues
 
 
-def run_deterministic_qa(generated_files: dict, goal_contract=None) -> dict:
+def run_deterministic_qa(generated_files: dict) -> dict:
     """
     Run all deterministic pre-checks before LLM QA.
 
@@ -173,21 +172,9 @@ def run_deterministic_qa(generated_files: dict, goal_contract=None) -> dict:
     issues = []
     checks_run = []
 
-    # 1. File-set match against contract
-    if goal_contract and goal_contract.allowed_output_files:
-        checks_run.append("file_set_match")
-        allowed = set(goal_contract.allowed_output_files)
-        actual = set(generated_files.keys())
-        extra_files = actual - allowed
-        if extra_files:
-            issues.append(
-                f"GoalContract violation: files {sorted(extra_files)} are not in "
-                f"allowed_output_files {sorted(allowed)}"
-            )
-
-    # 2. Per-file checks
+    # Per-file checks
     for filename, content in generated_files.items():
-        # Empty file check (always runs, regardless of contract)
+        # Empty file check
         if not content or not content.strip():
             checks_run.append(f"empty:{filename}")
             issues.append(f"{filename} is empty")
@@ -202,20 +189,8 @@ def run_deterministic_qa(generated_files: dict, goal_contract=None) -> dict:
         issues.extend(_check_placeholders(content, filename))
 
         # Single-file web integrity
-        if goal_contract and goal_contract.single_file and goal_contract.requires_inline_assets:
-            checks_run.append(f"inline_assets:{filename}")
-            issues.extend(_check_single_file_web_integrity(content, filename))
-
-        # Sidecar references (when sidecars disallowed)
-        if goal_contract and not goal_contract.allow_sidecar_assets:
-            checks_run.append(f"no_sidecars:{filename}")
-            for pattern in _SIDECAR_PATTERNS:
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    issues.append(
-                        f"{filename}: external sidecar reference '{match.group(0).strip()}' "
-                        f"disallowed by GoalContract"
-                    )
+        checks_run.append(f"inline_assets:{filename}")
+        issues.extend(_check_single_file_web_integrity(content, filename))
 
         # DOM selector cross-check
         if filename.endswith(".html") or filename.endswith(".htm"):
@@ -239,11 +214,10 @@ class QAVerifierAgent:
     json_parser = JsonOutputParser()
 
     def verify(self, plan: dict, generated_files: dict,
-               builder_reports: list, tracer=None,
-               goal_contract=None) -> dict:
+               builder_reports: list, tracer=None) -> dict:
 
         # ── Phase 1: Deterministic pre-checks ──
-        det_result = run_deterministic_qa(generated_files, goal_contract)
+        det_result = run_deterministic_qa(generated_files)
 
         if not det_result["passed"]:
             # Hard fail: skip LLM QA entirely, give actionable feedback

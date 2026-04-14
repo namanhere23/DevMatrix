@@ -1,6 +1,5 @@
 import pytest
 from nexussentry.agents import run_deterministic_qa
-from nexussentry.contracts import GoalContract
 
 def test_mismatched_selectors_fail():
     html_content = """
@@ -28,25 +27,13 @@ def test_truncated_html_rejected():
 
 def test_sidecar_references_rejected():
     html_content = '<link rel="stylesheet" href="style.css">'
-    contract = GoalContract(
-        single_file=True,
-        requires_inline_assets=True,
-        allow_sidecar_assets=False,
-        allowed_output_files=["index.html"]
-    )
-    result = run_deterministic_qa({"index.html": html_content}, goal_contract=contract)
+    result = run_deterministic_qa({"index.html": html_content})
     assert result["passed"] is False
-    assert any("external sidecar reference" in i for i in result["issues"])
+    assert any("external sidecar" in i for i in result["issues"])
 
 def test_static_single_file_without_script_or_style_passes():
     html_content = "<html><body>Hello</body></html>"
-    contract = GoalContract(
-        single_file=True,
-        requires_inline_assets=True,
-        allow_sidecar_assets=False,
-        allowed_output_files=["index.html"]
-    )
-    result = run_deterministic_qa({"index.html": html_content}, goal_contract=contract)
+    result = run_deterministic_qa({"index.html": html_content})
     assert result["passed"] is True
 
 def test_valid_single_file_passes():
@@ -60,11 +47,5 @@ def test_valid_single_file_passes():
     </body>
 </html>
 """
-    contract = GoalContract(
-        single_file=True,
-        requires_inline_assets=True,
-        allow_sidecar_assets=False,
-        allowed_output_files=["index.html"]
-    )
-    result = run_deterministic_qa({"index.html": html_content}, goal_contract=contract)
+    result = run_deterministic_qa({"index.html": html_content})
     assert result["passed"] is True
