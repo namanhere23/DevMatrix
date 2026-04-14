@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
-import { escapeHtml, formatTimestamp } from '../utils/helpers';
+import { escapeHtml, formatTimestamp, formatJsonLog } from '../utils/helpers';
+import SwarmVisualizer from './SwarmVisualizer';
 
 const AGENT_NAMES = ['Scout', 'Architect', 'Builder', 'QAVerifier', 'Critic', 'Integrator', 'Guardian'];
 
@@ -128,15 +129,8 @@ const TerminalPanel = forwardRef(function TerminalPanel({
         <button className="panel-btn" onClick={() => toggleSearch(false)}>✕</button>
       </div>
 
-      {/* Agent cards */}
-      <div className="agent-cards">
-        {AGENT_NAMES.map((name, i) => (
-          <div key={name} className={`agent-card ${agentStates[i] || 'idle'}`}>
-            <span className="agent-indicator" />
-            {name}
-          </div>
-        ))}
-      </div>
+      {/* Agent Swarm Visualizer */}
+      <SwarmVisualizer agentStates={agentStates} />
 
       {/* Terminal body */}
       <div className="terminal-body" ref={terminalBodyRef}>
@@ -160,10 +154,11 @@ const TerminalPanel = forwardRef(function TerminalPanel({
             if (isCurrent) cls += ' highlight-current';
 
             return (
-              <div key={line.id || i} className={cls}>
-                <span className="terminal-timestamp">{line.ts}</span>
-                <span dangerouslySetInnerHTML={{ __html: escapeHtml(line.text) }} />
-              </div>
+              <AnimatedTerminalLine 
+                key={line.id || i} 
+                line={line} 
+                cls={cls} 
+              />
             );
           })
         )}
@@ -171,5 +166,51 @@ const TerminalPanel = forwardRef(function TerminalPanel({
     </div>
   );
 });
+
+const CHARS = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレゲゼデベペオォコソトノホモヨョロゴゾドボポヴッン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function AnimatedTerminalLine({ line, cls }) {
+  const [decoded, setDecoded] = useState(!line.isNew);
+  const [scrambled, setScrambled] = useState('');
+  const iters = useRef(0);
+
+  useEffect(() => {
+    if (decoded) return;
+    const text = line.text;
+    const totalLength = text.length;
+    const maxIters = 12;
+    
+    const interval = setInterval(() => {
+      iters.current += 1;
+      if (iters.current >= maxIters) {
+        clearInterval(interval);
+        setDecoded(true);
+      } else {
+        const displayLen = Math.min(totalLength, 120);
+        let s = '';
+        for (let i = 0; i < displayLen; i++) {
+            if (Math.random() < iters.current / maxIters) {
+                s += text[i] || ' ';
+            } else {
+                s += CHARS[Math.floor(Math.random() * CHARS.length)];
+            }
+        }
+        setScrambled(s + (totalLength > 120 ? '...' : ''));
+      }
+    }, 40);
+    return () => clearInterval(interval);
+  }, [line.text, decoded]);
+
+  return (
+    <div className={cls}>
+      <span className="terminal-timestamp">{line.ts}</span>
+      {!decoded ? (
+        <span className="scramble-text">{scrambled}</span>
+      ) : (
+        <span className="decoded-text" dangerouslySetInnerHTML={{ __html: formatJsonLog(line.text) }} />
+      )}
+    </div>
+  );
+}
 
 export default TerminalPanel;
