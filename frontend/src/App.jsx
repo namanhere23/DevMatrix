@@ -35,7 +35,7 @@ function AppInner() {
   const [isRunning, setIsRunning] = useState(false);
   const [progressComplete, setProgressComplete] = useState(false);
   const [terminalLines, setTerminalLines] = useState([]);
-  const [agentStates, setAgentStates] = useState(['idle', 'idle', 'idle', 'idle', 'idle']);
+  const [agentStates, setAgentStates] = useState(['idle', 'idle', 'idle', 'idle', 'idle', 'idle', 'idle']);
   const [scorecard, setScorecard] = useState(null);
   const [tasks, setTasks] = useState(null);
   const [currentArtifacts, setCurrentArtifacts] = useState({});
@@ -100,7 +100,14 @@ function AppInner() {
       const scores = taskList.filter(t => typeof t.score === 'number').map(t => t.score);
       const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
 
-      setScorecard({ total_tasks: taskList.length, completed: done, failed, avg_score: Math.round(avg * 10) / 10 });
+      setScorecard({ 
+        total_tasks: taskList.length, 
+        completed: done, 
+        failed, 
+        avg_score: Math.round(avg * 10) / 10,
+        estimated_cost: manifest?.summary?.estimated_cost,
+        providers: manifest?.provider_stats?.provider_usage
+      });
       setTasks(taskList);
       setCurrentArtifacts(artifacts);
 
@@ -139,7 +146,7 @@ function AppInner() {
   }, []);
 
   // ── Agent card helpers ──
-  const AGENT_NAMES = ['Scout', 'Architect', 'Builder', 'Critic', 'Guardian'];
+  const AGENT_NAMES = ['Scout', 'Architect', 'Builder', 'QAVerifier', 'Critic', 'Integrator', 'Guardian'];
 
   const updateAgentFromLog = useCallback((text) => {
     setAgentStates(prev => {
@@ -164,7 +171,7 @@ function AppInner() {
     if (isRunning) return;
     setIsRunning(true);
     setProgressComplete(false);
-    setAgentStates(['idle', 'idle', 'idle', 'idle', 'idle']);
+    setAgentStates(['idle', 'idle', 'idle', 'idle', 'idle', 'idle', 'idle']);
     clearTerminal();
     setScorecard(null);
     setTasks(null);
@@ -197,6 +204,19 @@ function AppInner() {
             setTasks(event.tasks);
             toast('success', 'Swarm complete!', `Score: ${event.scorecard.avg_score}/100`);
             markAllDone();
+            
+            // Background fetch manifest for cost and provider stats
+            if (event.session_id) {
+              api.loadSessionManifest(event.session_id).then(manifest => {
+                if (manifest) {
+                  setScorecard(prev => prev ? {
+                    ...prev,
+                    estimated_cost: manifest.summary?.estimated_cost,
+                    providers: manifest.provider_stats?.provider_usage
+                  } : prev);
+                }
+              }).catch(() => {});
+            }
             break;
           case 'error':
             addLine(`❌ Error: ${event.error}`, 'event-error');

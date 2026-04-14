@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import { escapeHtml, formatTimestamp } from '../utils/helpers';
 
-const AGENT_NAMES = ['Scout', 'Architect', 'Builder', 'Critic', 'Guardian'];
+const AGENT_NAMES = ['Scout', 'Architect', 'Builder', 'QAVerifier', 'Critic', 'Integrator', 'Guardian'];
 
 const TerminalPanel = forwardRef(function TerminalPanel({
   terminalLines,

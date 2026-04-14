@@ -56,7 +56,20 @@ export default function ResultsPanel({
                     <div className="score-value">{scorecard.avg_score || 0}</div>
                     <div className="score-label">Avg Score</div>
                   </div>
+                  {scorecard.estimated_cost && (
+                    <div className="score-card">
+                      <div className="score-value">{scorecard.estimated_cost}</div>
+                      <div className="score-label">Est. Cost</div>
+                    </div>
+                  )}
                 </div>
+
+                {scorecard.providers && Object.keys(scorecard.providers).length > 0 && (
+                  <div style={{ marginTop: '16px', fontSize: '13px', color: '#94a3b8', background: 'rgba(255, 255, 255, 0.05)', padding: '10px 14px', borderRadius: '6px' }}>
+                    <span style={{ marginRight: '8px' }}>🤖 Providers:</span>
+                    {Object.entries(scorecard.providers).map(([p, count]) => `${p} x${count}`).join(' | ')}
+                  </div>
+                )}
 
                 {/* Task results */}
                 {tasks.length > 0 && (
