@@ -1,3 +1,11 @@
+### **Multi-Agent Swarm Orchestration · Self-Correcting AI · Real-Time Observability**
+ 
+*5 specialized agents. 4 AI providers. 1 unified pipeline. Zero compromises.*
+
+ 
+</div>
+---
+ 
 ## ✦ What is NexusSentry?
  
 NexusSentry is a **production-grade multi-agent orchestration system** that replaces single-model AI with a coordinated hive of specialized agents — each an expert in its domain, each talking to the best available LLM for its role.
@@ -14,7 +22,7 @@ User → GPT-4 → Result        User → Scout → Architect → Builder
                              Integrator → Tracer → Dashboard
 ```
  
-> **"5 specialized agents. 4 AI providers. 12+ tool calls. Direct Integrator-to-Tracer observability pipeline. 1 human approval. 0 data leaked. Under 90 seconds."**
+> **"5 specialized agents. 4 AI providers. 12+ tool calls. Direct Integrator-to-Tracer observability pipeline. 1 human approval. Under 90 seconds."**
  
 ---
  
@@ -344,7 +352,7 @@ HTML/CSS selector validation + error detection before Critic review — catches 
 **🎭 Mock Mode**
 Full swarm runs with zero API keys. Every agent fires, the dashboard populates, the loop completes.
  
-**🛡️ Graceful Degradation**
+**⚙️ Graceful Degradation**
 Every component has a fallback path. Nothing crashes. The swarm always returns a result.
  
 </td>
@@ -368,4 +376,3 @@ Every component has a fallback path. Nothing crashes. The swarm always returns a
 └────────────────────────────────────────────┘
 ```
  
----
