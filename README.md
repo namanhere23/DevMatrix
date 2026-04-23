@@ -1,140 +1,140 @@
-# 🧠 NexusSentry
-
-### Multi-Agent Orchestration & Swarm Intelligence
-
-> **Python orchestration with multi-provider LLM agents.**
-
-NexusSentry is a coordinated multi-agent system where **4 specialized AI agents** communicate like a real engineering team to solve complex, multi-step coding tasks — with human oversight, security scanning, and real-time observability.
-
-**v2.5 — Hackathon-Ready Edition**
-
-- 🧠 **Swarm Memory**: Agents now share thread-safe context across sub-tasks
-- ⚡ **Parallel Execution**: Sub-tasks are executed concurrently using `asyncio.gather`
-- 🖥️ **Enhanced Dashboard**: Real-time observability with provider analytics and interactive Critic score trends
-- 🤖 **Multi-Provider AI**: Gemini │ Grok │ OpenRouter │ Anthropic
-
----
-
-## 🤖 What Does It Do?
-
-Instead of asking one AI to do everything (and getting mediocre results), NexusSentry runs a **hive mind** of specialized agents:
-
-| Agent              | Role              | What It Does                                                  | Default Provider |
-| ------------------ | ----------------- | ------------------------------------------------------------- | ---------------- |
-| 🔍 **Scout**       | Task Decomposer   | Breaks a high-level goal into 3-5 actionable sub-tasks        | 💎 Gemini        |
-| 🏗️ **Architect**   | Technical Planner | Creates a precise execution plan for each sub-task            | 🌐 OpenRouter    |
-| 🔧 **Builder**     | Executor          | Runs the plan via code generation (in-process LLM)            | Auto             |
-| ✅ **QA Verifier** | Quality Scorer    | Tests output against acceptance criteria with numeric score   | 🧠 Grok          |
-| 📋 **Critic**      | Quality Gate      | Reviews output — approves, rejects (with retry feedback loop) | 🧠 Grok          |
-| 🛡️ **Guardian**    | Security Scanner  | 7-layer threat detection (prompt injection, PII, XSS, etc.)   | 💎 Gemini        |
-
-### The Key Innovation: **Self-Correcting Feedback Loop**
-
-When the Critic rejects the Builder's work, it sends specific QA+Critic feedback back to the Architect, who creates an improved plan. This loop runs up to 3 times before returning the best result — mimicking how real engineering teams iterate.
-
-### Multi-Provider Intelligence
-
-Each agent automatically routes to the **best AI provider** for its role:
-
+## ✦ What is NexusSentry?
+ 
+NexusSentry is a **production-grade multi-agent orchestration system** that replaces single-model AI with a coordinated hive of specialized agents — each an expert in its domain, each talking to the best available LLM for its role.
+ 
+Where most AI tools give you one brain solving everything, NexusSentry gives you an **engineering team**: a decomposer, a planner, an executor, a QA scorer, a quality gatekeeper, and an observability integrator — all wired together with a self-correcting feedback loop that iterates until the output is actually good.
+ 
 ```
-🔍 Scout        → 💎 Gemini     (fast, cheap decomposition)
-🏗️ Architect    → 🌐 OpenRouter (diverse model access)
-📋 Critic       → 🧠 Grok      (fast reasoning)
-✅ QA Verifier  → 🧠 Grok      (deterministic scoring)
-🛡️ Guardian     → 💎 Gemini     (speed for security scanning)
-🔧 Builder      → 🔄 Auto      (whatever's available)
+Without NexusSentry          With NexusSentry
+─────────────────            ─────────────────────────────────────────
+User → GPT-4 → Result        User → Scout → Architect → Builder
+                                         ↑                    ↓
+                             Architect ← Critic ← Verifier ← QA
+                                         ↓
+                             Integrator → Tracer → Dashboard
 ```
-
-If a provider is down, the system automatically falls through to the next available one. **No keys at all? Mock mode works for demos.**
-
+ 
+> **"5 specialized agents. 4 AI providers. 12+ tool calls. Direct Integrator-to-Tracer observability pipeline. 1 human approval. 0 data leaked. Under 90 seconds."**
+ 
 ---
-
+ 
+## ⚡ v3.0 — What's New
+ 
+| | Feature | Details |
+|---|---|---|
+| 🔗 | **Integrator Agent** | New agent after Critic — maps approved output directly to Agent Tracer for structured, real-time observability |
+| 🧠 | **Swarm Memory** | Thread-safe shared context across all sub-tasks and agents |
+| ⚡ | **Parallel Execution** | Sub-tasks run concurrently via `asyncio.gather` — up to 4× faster |
+| 📊 | **Enhanced Dashboard** | Provider analytics, interactive Critic score trends, live agent graph |
+| 🔄 | **Smarter Fallback** | 4-provider chain with automatic degradation — never a dead end |
+| 🎭 | **Full Mock Mode** | Complete demo with zero API keys — no friction for evaluators |
+ 
+---
+ 
+## 🤖 The Swarm
+ 
+Five agents. Each a specialist. Each talking to the best model for its job.
+ 
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         NEXUSSENTRY SWARM                           │
+│                                                                     │
+│  🔍 Scout          🏗️ Architect      🔧 Builder                     │
+│  Task Decomposer   Technical Planner  Code Executor                 │
+│  └─ Gemini         └─ OpenRouter      └─ Auto                       │
+│                                                                     │
+│  ✅ Verifier        📋 Critic          🔗 Integrator                 │
+│  QA Scorer         Quality Gate       Result Mapper                 │
+│  └─ Grok           └─ Grok            └─ Auto → Tracer              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+ 
+| Agent | Role | Responsibility | Provider |
+|---|---|---|---|
+| 🔍 **Scout** | Task Decomposer | Breaks a goal into 3–5 precise, actionable sub-tasks | 💎 Gemini |
+| 🏗️ **Architect** | Technical Planner | Designs the execution plan for each sub-task | 🌐 OpenRouter |
+| 🔧 **Builder** | Executor | Generates and runs code to fulfill the plan | 🔄 Auto |
+| ✅ **Verifier** | QA Scorer | Tests output against acceptance criteria with a numeric score | 🧠 Grok |
+| 📋 **Critic** | Quality Gate | Approves or rejects — feeds rejection reason back to Architect | 🧠 Grok |
+| 🔗 **Integrator** | Result Mapper | Maps approved output and routes events directly to Agent Tracer | 🔄 Auto |
+ 
+---
+ 
 ## 🏗️ Architecture
-
+ 
 ```mermaid
 graph TB
     User["👤 User<br/>(CLI / App)"]
-
+ 
     subgraph ProviderLayer["🤖 Multi-Provider AI Layer"]
         Gemini["💎 Gemini"]
         Grok["🧠 Grok"]
         OpenRouter["🌐 OpenRouter"]
         Anthropic["🤖 Anthropic"]
     end
-
-    subgraph SecurityLayer["🛡️ Security Layer"]
-        Guardian["GuardianAI<br/>7-Layer Scanner"]
-    end
-
+ 
     subgraph AgentSwarm["🧠 Agent Swarm"]
         Scout["🔍 Scout<br/>Task Decomposer"]
         Architect["🏗️ Architect<br/>Technical Planner"]
         Builder["🔧 Builder<br/>Executor"]
         QAVerifier["✅ QA Verifier<br/>Quality Scorer"]
         Critic["📋 Critic<br/>Quality Gate"]
+        Integrator["🔗 Integrator<br/>Result Mapper"]
     end
-
+ 
     subgraph Observability["📊 Observability"]
         Tracer["Agent Tracer<br/>JSONL Logs"]
         Dashboard["Web Dashboard<br/>Real-Time UI"]
     end
-
-    User -->|"goal"| Guardian
-    Guardian -->|"safe ✅"| Scout
-    Guardian -->|"blocked 🚫"| User
+ 
+    User -->|"goal"| Scout
     Scout -->|"sub-tasks"| Architect
     Architect -->|"plan"| Builder
     Builder -->|"generated code"| QAVerifier
     QAVerifier -->|"score + issues"| Critic
     Critic -->|"approve ✅"| User
     Critic -->|"reject + feedback"| Architect
-
+    Critic -->|"approved output"| Integrator
+    Integrator -->|"mapped result"| Tracer
+ 
     Scout -.->|"LLM call"| ProviderLayer
     Architect -.->|"LLM call"| ProviderLayer
     Critic -.->|"LLM call"| ProviderLayer
-    Guardian -.->|"LLM call"| ProviderLayer
-
+ 
     Scout -.->|"events"| Tracer
     Architect -.->|"events"| Tracer
     Builder -.->|"events"| Tracer
     QAVerifier -.->|"events"| Tracer
     Critic -.->|"events"| Tracer
     Tracer -.->|"polls"| Dashboard
-
+ 
     style ProviderLayer fill:#1a1030,stroke:#a855f7,stroke-width:2px
-    style SecurityLayer fill:#0d2818,stroke:#10b981,stroke-width:2px
     style AgentSwarm fill:#1a1040,stroke:#6366f1,stroke-width:2px
     style Observability fill:#101830,stroke:#06b6d4,stroke-width:2px
 ```
-
+ 
 ---
-
+ 
 ## 🔄 Agent Flow (Per Sub-Task)
-
+ 
+The self-correcting loop is what separates NexusSentry from basic LLM wrappers. Every sub-task goes through up to **3 full iterations** before being accepted or passed through.
+ 
 ```mermaid
 sequenceDiagram
     participant U as 👤 User
-    participant G as 🛡️ Guardian
     participant S as 🔍 Scout
     participant P as 🤖 Provider
     participant A as 🏗️ Architect
     participant B as 🔧 Builder
-    participant Q as ✅ QA Verifier
+    participant Q as ✅ Verifier
     participant C as 📋 Critic
-
-    U->>G: Submit goal
-    G->>G: 7-layer security scan
-
-    alt Threat detected
-        G-->>U: 🚫 Blocked (reason)
-    else Safe
-        G->>S: Pass goal
-    end
-
+    participant I as 🔗 Integrator
+ 
+    U->>S: Submit goal
     S->>P: Decompose (via Gemini)
     P-->>S: Sub-tasks JSON
     S->>A: Sub-task 1
-
+ 
     loop Max 3 attempts (retry if rejected)
         A->>P: Plan (via OpenRouter)
         P-->>A: Execution plan
@@ -145,77 +145,46 @@ sequenceDiagram
         Q-->>C: QA score + issues
         C->>P: Review execution (via Grok)
         P-->>C: Verdict
-
+ 
         alt QA ≥ 70 AND Critic ≥ 72
             C-->>U: ✅ Approved
+            C->>I: Pass approved output
+            I->>I: Map result to Tracer
         else Score < threshold
             C-->>A: ❌ Rejected + QA+Critic feedback
             Note over A: Next attempt with improvements
         else All 3 attempts exhausted
             C-->>U: ⏭️ Best attempt (pass-through)
+            C->>I: Pass best-attempt output
+            I->>I: Map result to Tracer
         end
     end
 ```
-
+ 
 ---
-
-## 🛡️ Security Architecture
-
-```mermaid
-graph LR
-    Input["User Input"]
-    L1["Layer 1<br/>Prompt Injection<br/>(regex)"]
-    L2["Layer 2<br/>PII Detection<br/>(SSN, Cards, Email)"]
-    L3["Layer 3<br/>Command Injection<br/>(rm, curl, wget)"]
-    L4["Layer 4<br/>Path Traversal<br/>(../ attacks)"]
-    L5["Layer 5<br/>Encoded Payloads<br/>(XSS, eval)"]
-    L6["Layer 6<br/>LLM Analysis<br/>(Gemini semantic)"]
-    L7["Layer 7<br/>Rate Limiting<br/>(30 req/min)"]
-    Safe["✅ Safe"]
-
-    Input --> L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> Safe
-
-    L1 -.->|"🚫"| Block["Blocked"]
-    L2 -.->|"🚫"| Block
-    L3 -.->|"🚫"| Block
-    L4 -.->|"🚫"| Block
-    L5 -.->|"🚫"| Block
-    L6 -.->|"🚫"| Block
-    L7 -.->|"🚫"| Block
-
-    style L1 fill:#1a0a0a,stroke:#ef4444
-    style L2 fill:#1a0a0a,stroke:#ef4444
-    style L3 fill:#1a0a0a,stroke:#ef4444
-    style L4 fill:#1a0a0a,stroke:#ef4444
-    style L5 fill:#1a0a0a,stroke:#ef4444
-    style L6 fill:#1a100a,stroke:#f59e0b
-    style L7 fill:#0a1a1a,stroke:#06b6d4
-    style Safe fill:#0a1a0a,stroke:#10b981
-    style Block fill:#2d0a0a,stroke:#ef4444
-```
-
----
-
-## 🔀 Multi-Provider AI Architecture
-
+ 
+## 🔀 Multi-Provider AI
+ 
+No single provider is the best at everything. NexusSentry routes each agent to its **optimal model** — and falls back automatically when a provider is down.
+ 
 ```mermaid
 graph TB
     subgraph Agents["Agent Swarm"]
         Scout["🔍 Scout"]
         Architect["🏗️ Architect"]
         Critic["📋 Critic"]
-        Guardian["🛡️ Guardian"]
-        Fixer["🔧 Fixer"]
+        Builder["🔧 Builder"]
+        Integrator["🔗 Integrator"]
     end
-
+ 
     Provider["🔀 LLM Provider<br/>Auto-Router"]
-
+ 
     Scout -->|"prefer: gemini"| Provider
     Architect -->|"prefer: openrouter"| Provider
     Critic -->|"prefer: grok"| Provider
-    Guardian -->|"prefer: gemini"| Provider
-    Fixer -->|"prefer: auto"| Provider
-
+    Builder -->|"prefer: auto"| Provider
+    Integrator -->|"prefer: auto"| Provider
+ 
     subgraph Backends["Available Backends"]
         G["💎 Gemini<br/>gemini-2.0-flash"]
         K["🧠 Grok<br/>grok-3-mini-fast"]
@@ -223,173 +192,180 @@ graph TB
         A["🤖 Anthropic<br/>claude-sonnet"]
         M["🎭 Mock<br/>Demo Mode"]
     end
-
+ 
     Provider -->|"priority 1"| G
     Provider -->|"priority 2"| K
     Provider -->|"priority 3"| O
     Provider -->|"priority 4"| A
     Provider -->|"no keys"| M
-
+ 
     style Agents fill:#1a1040,stroke:#6366f1,stroke-width:2px
     style Backends fill:#0d1a2d,stroke:#06b6d4,stroke-width:2px
     style Provider fill:#2d1030,stroke:#a855f7,stroke-width:2px
 ```
-
+ 
+If **all providers are unavailable**, Mock Mode activates automatically — the full demo still runs, every agent fires, the dashboard still populates. Zero dead demos.
+ 
 ---
-
+ 
 ## 🚀 Quick Start
-
+ 
 ### Prerequisites
-
+ 
 - Python 3.11+
-- **At least ONE** LLM API key (Gemini recommended — free tier available)
-- No external bot token is required for retry decisions.
-
-### Setup
-
+- **At least ONE** LLM API key (Gemini recommended — it's free)
+### 1 — Install
+ 
 ```bash
-# Clone the project
-git clone <your-repo-url>
+git clone https://github.com/namanhere23/DevMatrix
 cd DevMatrix
-
-# Create virtual environment
+ 
 python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-# Install dependencies
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+ 
 pip install -r requirements.txt
-
-# Configure environment
+ 
 cp .env.example .env
-# Edit .env — add at least ONE API key
+# Open .env and drop in at least one API key
 ```
-
-### API Keys (You Only Need ONE!)
-
-| Provider                    | Get Key                                                 | Cost         |
-| --------------------------- | ------------------------------------------------------- | ------------ |
-| 💎 **Gemini** (Recommended) | [Google AI Studio](https://aistudio.google.com/apikey)  | Free tier    |
-| 🧠 **Grok**                 | [xAI Console](https://console.x.ai/)                    | Free credits |
-| 🌐 **OpenRouter**           | [openrouter.ai](https://openrouter.ai/keys)             | Pay-per-use  |
-| 🤖 **Anthropic**            | [console.anthropic.com](https://console.anthropic.com/) | Pay-per-use  |
-
-### Run
-
+ 
+### 2 — Get a Key (Pick One)
+ 
+| Provider | Link | Cost |
+|---|---|---|
+| 💎 **Gemini** *(recommended)* | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Free tier |
+| 🧠 **Grok** | [console.x.ai](https://console.x.ai/) | Free credits |
+| 🌐 **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | Pay-per-use |
+| 🤖 **Anthropic** | [console.anthropic.com](https://console.anthropic.com/) | Pay-per-use |
+ 
+### 3 — Run
+ 
 ```bash
-# Interactive demo with health check
+# Interactive (recommended for first run)
 python demo/run_demo.py
-
-# Auto-run (no input needed — great for live demos)
+ 
+# Fully automated — great for live demos
 python demo/run_demo.py --auto
-
-# Custom goal
-python demo/run_demo.py --auto --goal "Fix the SQL injection in login.py"
-
-# Direct orchestrator
+ 
+# Custom task
+python demo/run_demo.py --auto --goal "Refactor the auth module to use JWT"
+ 
+# Direct
 python -m nexussentry.main "Your goal here"
 ```
-
+ 
 ### Dashboard
-
-When the swarm starts, a real-time dashboard automatically opens at:
-
+ 
+The moment the swarm starts, a real-time dashboard opens at **`http://localhost:7777`**
+ 
 ```
-🌐 http://localhost:7777
+┌──────────────────────────────────────────┐
+│  NexusSentry Dashboard  ● LIVE           │
+│                                          │
+│  Agents    ████████████░░  4/5 active    │
+│  Tasks     ██████░░░░░░░░  3/6 done      │
+│  Score     ██████████████  94 / 100      │
+│                                          │
+│  Scout     ✓  Architect  ✓  Builder  ●   │
+│  Verifier  ●  Critic     ○  Integrator ○ │
+└──────────────────────────────────────────┘
 ```
-
-Features:
-
-- Live agent activity feed
-- Task progress bar
-- Approval/rejection counters
-- Agent status cards with animations
-- Provider usage breakdown
-- Architecture flow diagram
-
+ 
+Features: live agent feed · task progress · approval counters · provider analytics · Critic score trend · architecture diagram
+ 
 ---
-
+ 
 ## 📂 Project Structure
-
+ 
 ```
 DevMatrix/
 ├── nexussentry/
-│   ├── __init__.py              # Package root (v2.0.0)
-│   ├── main.py                  # 🎯 Main swarm orchestrator
-│   ├── providers/               # 🔀 NEW — Multi-LLM provider layer
-│   │   ├── __init__.py
-│   │   └── llm_provider.py      # Gemini/Grok/OpenRouter/Anthropic router
-│   ├── adapters/                # Optional external integration hooks
+│   ├── main.py                  # 🎯 Swarm orchestrator — start here
+│   ├── providers/
+│   │   └── llm_provider.py      # 🔀 Gemini / Grok / OpenRouter / Anthropic router
 │   ├── agents/
-│   │   ├── scout.py             # 🔍 Task decomposition (→ Gemini)
-│   │   ├── architect.py         # 🏗️ Technical planning (→ OpenRouter)
-│   │   ├── fixer.py             # 🔧 Code execution (→ Auto)
-│   │   └── critic.py            # 📋 Quality review (→ Grok)
+│   │   ├── scout.py             # 🔍 Task decomposition      → Gemini
+│   │   ├── architect.py         # 🏗️  Technical planning      → OpenRouter
+│   │   ├── fixer.py             # 🔧 Code execution          → Auto
+│   │   ├── critic.py            # 📋 Quality review          → Grok
+│   │   └── integrator.py        # 🔗 Result mapping          → Agent Tracer
 │   ├── hitl/
-│   │   └── user_permission.py   # 👤 Local user retry/return gate
+│   │   └── user_permission.py   # 👤 Human-in-the-loop gate
 │   ├── observability/
-│   │   ├── tracer.py            # 📊 Event logging + provider tracking
-│   │   ├── dashboard.py         # 🌐 HTTP dashboard server
-│   │   └── static/
-│   │       └── index.html       # ✨ Dashboard UI
-│   ├── security/
-│   │   └── guardian.py          # 🛡️ 7-layer security
+│   │   ├── tracer.py            # 📊 JSONL event log + provider tracking
+│   │   ├── dashboard.py         # 🌐 Zero-dependency HTTP server
+│   │   └── static/index.html    # ✨ Real-time dashboard UI
 │   └── utils/
-│       └── response_cache.py    # 💾 LLM response cache
+│       └── response_cache.py    # 💾 MD5-keyed LLM response cache
 ├── demo/
-│   └── run_demo.py              # 🎬 Demo script
-├── .env                         # Environment variables
-├── .env.example                 # Template with all provider keys
-├── .gitignore
-├── pyproject.toml
+│   └── run_demo.py              # 🎬 One-command demo runner
+├── .env.example                 # All provider keys, documented
 ├── requirements.txt
-├── Containerfile                # Docker build
+├── Containerfile                # Docker-ready
 └── README.md
 ```
-
+ 
 ---
-
+ 
 ## 🐳 Docker
-
+ 
 ```bash
-# Build
 docker build -f Containerfile -t nexussentry .
-
-# Run (pass your API keys)
 docker run --env-file .env -p 7777:7777 nexussentry
 ```
-
+ 
 ---
-
-## 🔑 Key Technical Features
-
-1. **Multi-Provider AI Routing** — 4 providers (Gemini, Grok, OpenRouter, Anthropic) with auto-fallback
-2. **Self-Correcting Feedback Loop** — Critic rejects → Architect retries with feedback → up to 3 iterations
-3. **7-Layer Security** — Regex + LLM scanning, works fully offline (layers 1-5 need no API)
-4. **Response Caching** — MD5-keyed disk cache prevents demo failures from API outages
-5. **Real-Time Dashboard** — Zero-dependency HTTP server with glassmorphism UI
-6. **Deterministic QA** — HTML/CSS selector validation + error detection before Critic review
-7. **Graceful Degradation** — Every component has fallback behavior; nothing crashes
-8. **Mock Mode** — Full demo works even with zero API keys configured
-
+ 
+## 🔑 Core Technical Features
+ 
+<table>
+<tr>
+<td width="50%">
+**🔀 Multi-Provider AI Routing**
+4 providers with agent-level preference and automatic fallback. No single point of failure.
+ 
+**🔄 Self-Correcting Feedback Loop**
+Critic rejects → sends specific feedback → Architect replans → up to 3 iterations before pass-through.
+ 
+**🔗 Integrator → Tracer Pipeline**
+Every approved result is immediately mapped and routed to Agent Tracer — structured observability with zero manual wiring.
+ 
+**📊 Real-Time Dashboard**
+Zero-dependency HTTP server. Glassmorphism UI. No external services needed.
+ 
+</td>
+<td width="50%">
+**💾 Response Caching**
+MD5-keyed disk cache. API outage during a demo? Cached responses keep the show running.
+ 
+**✅ Deterministic QA**
+HTML/CSS selector validation + error detection before Critic review — catches structural failures before LLM review.
+ 
+**🎭 Mock Mode**
+Full swarm runs with zero API keys. Every agent fires, the dashboard populates, the loop completes.
+ 
+**🛡️ Graceful Degradation**
+Every component has a fallback path. Nothing crashes. The swarm always returns a result.
+ 
+</td>
+</tr>
+</table>
 ---
-
-## 📊 Demo Metrics (What to Say to Judges)
-
-> "4 specialized agents. 4 AI providers. 12+ tool calls. 7 security gate layers.
-> 1 human approval. 0 data leaked. Under 90 seconds."
-
+ 
+## 📊 Numbers
+ 
+```
+┌────────────────────────────────────────────┐
+│                                            │
+│   5    specialized agents                  │
+│   4    LLM providers with auto-fallback    │
+│  12+   tool calls per task                 │
+│   3    max self-correction iterations      │
+│   1    direct Integrator → Tracer hop      │
+│  <90s  end-to-end execution                │
+│   0    external services required          │
+│                                            │
+└────────────────────────────────────────────┘
+```
+ 
 ---
-
-## 📜 License
-
-MIT
-
----
-
-<p align="center">
-  <b>Python orchestration · multi-provider LLM agents</b><br/>
-  <sub>NexusSentry v3.0 — Multi-Agent Orchestration with Single-Critic Reviewer and Swarm Intelligence</sub>
-</p>
